@@ -44,9 +44,10 @@ export async function runRerollJob(deps: PipelineDeps, jobId: string): Promise<v
     .where(and(eq(scenes.videoId, job.videoId), eq(scenes.index, sceneIndex)));
   if (!scene) throw new Error(`Scene ${sceneIndex} not found for ${job.videoId}`);
 
+  // Attempt counting belongs to the queue (see runGenerationJob).
   await deps.db
     .update(jobs)
-    .set({ status: "running", startedAt: new Date(), attempts: job.attempts + 1 })
+    .set({ status: "running", startedAt: new Date() })
     .where(eq(jobs.id, jobId));
 
   try {

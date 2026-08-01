@@ -228,6 +228,14 @@ export const jobs = pgTable(
     /** Steps are idempotent keyed on video+step; the job itself is keyed too (FAV-903). */
     idempotencyKey: text("idempotency_key").notNull(),
     attempts: integer("attempts").notNull().default(0),
+    /**
+     * Queue lease (FAV-901): a worker claims a job by setting worker_id and a
+     * lease expiry, extending it via heartbeat while running. If the worker
+     * dies the lease lapses and another worker reclaims the job — pipeline
+     * steps are idempotent, so the re-run resumes rather than duplicating.
+     */
+    leasedUntil: timestamp("leased_until", { withTimezone: true }),
+    workerId: text("worker_id"),
     /** Correlates logs across web -> workflow -> workers (FAV-1601). */
     traceId: text("trace_id"),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -238,7 +246,9 @@ export const jobs = pgTable(
   (t) => [
     uniqueIndex("jobs_idempotency_idx").on(t.idempotencyKey),
     index("jobs_org_status_idx").on(t.orgId, t.status),
-    index("jobs_video_idx").on(t.videoId)
+    index("jobs_video_idx").on(t.videoId),
+    // Drives the claim query: pending work ordered by age, plus lease sweeps.
+    index("jobs_claim_idx").on(t.status, t.leasedUntil, t.createdAt)
   ]
 );
 

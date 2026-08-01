@@ -1,0 +1,31 @@
+{
+  "name": "@fav/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "fav-worker": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@fav/core": "workspace:*",
+    "@fav/db": "workspace:*",
+    "@fav/providers": "workspace:*",
+    "@fav/workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "@fav/config": "workspace:*",
+    "@types/node": "^22.20.1",
+    "eslint": "^9.20.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

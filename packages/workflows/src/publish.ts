@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { newId } from "@fav/core";
-import { publishJobs, socialAccounts, videos, type Db } from "@fav/db";
+import { jobs, publishJobs, socialAccounts, videos, type Db } from "@fav/db";
 import {
   decryptSecret,
   encryptSecret,
@@ -42,6 +42,18 @@ export async function createPublishJob(
     tags: args.tags,
     visibility: args.visibility ?? "public",
     status: "pending"
+  });
+  // Publish work lives in publish_jobs, but the queue only claims from jobs —
+  // so enqueue a pointer row that carries the publish job id (FAV-901/1306).
+  await db.insert(jobs).values({
+    id: newId("job"),
+    orgId: args.orgId,
+    videoId: args.videoId,
+    kind: "publish",
+    status: "queued",
+    idempotencyKey: `publish:${publishJobId}`,
+    detail: JSON.stringify({ publishJobId }),
+    traceId: newId("trc")
   });
   return { publishJobId };
 }

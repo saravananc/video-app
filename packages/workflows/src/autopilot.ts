@@ -1,10 +1,11 @@
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { newId, videoRequestSchema } from "@fav/core";
-import { autopilotRules, autopilotRuns, socialAccounts, videos } from "@fav/db";
+import { autopilotRules, autopilotRuns, jobs, socialAccounts, videos, type Db } from "@fav/db";
 import type { Platform } from "@fav/providers";
 import type { PipelineDeps } from "./deps.js";
 import { createGenerationJob, runGenerationJob } from "./generation.js";
 import { createPublishJob, runPublishJob } from "./publish.js";
+import { claimJobById } from "./queue.js";
 
 /**
  * Cadence grammar (FAV-1401/1402): "daily", "weekly", "every:<n>h", "every:<n>d".
@@ -52,7 +53,16 @@ export async function runAutopilotRule(deps: PipelineDeps, ruleId: string): Prom
     });
     const { videoId, jobId } = await createGenerationJob(db, { orgId: rule.orgId, request });
     await db.update(autopilotRuns).set({ videoId }).where(eq(autopilotRuns.id, runId));
-    await runGenerationJob(deps, jobId);
+
+    // Claim before running inline so a queue worker can't pick up the same job
+    // and pay for the same provider calls twice. If a worker beat us to it,
+    // let it finish rather than racing.
+    const claimed = await claimJobById(db, jobId, `autopilot:${runId}`);
+    if (claimed) {
+      await runGenerationJob(deps, jobId);
+    } else {
+      await waitForJobCompletion(db, jobId);
+    }
 
     const [video] = await db.select().from(videos).where(eq(videos.id, videoId));
     const creditsSpent = video?.creditsCharged ?? null;
@@ -109,6 +119,20 @@ export async function runAutopilotRule(deps: PipelineDeps, ruleId: string): Prom
       .where(eq(autopilotRuns.id, runId));
     throw err;
   }
+}
+
+/** Poll a job another worker is running until it reaches a terminal state. */
+async function waitForJobCompletion(db: Db, jobId: string, timeoutMs = 15 * 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const [job] = await db.select({ status: jobs.status }).from(jobs).where(eq(jobs.id, jobId));
+    if (!job || job.status === "completed") return;
+    if (job.status === "failed" || job.status === "canceled") {
+      throw new Error(`Generation job ${jobId} ${job.status}`);
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error(`Timed out waiting for generation job ${jobId}`);
 }
 
 /**

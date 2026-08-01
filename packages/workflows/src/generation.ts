@@ -98,9 +98,11 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
   if (!video) throw new Error(`Video ${videoId} not found`);
   const request = videoRequestSchema.parse(video.request);
 
+  // Attempt counting belongs to the queue, which owns claiming and retries —
+  // incrementing here too would double-count every run.
   await deps.db
     .update(jobs)
-    .set({ status: "running", startedAt: job.startedAt ?? new Date(), attempts: job.attempts + 1 })
+    .set({ status: "running", startedAt: job.startedAt ?? new Date() })
     .where(eq(jobs.id, jobId));
 
   try {

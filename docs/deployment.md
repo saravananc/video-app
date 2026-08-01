@@ -34,22 +34,44 @@ Set any of these to activate the real adapter (mock otherwise):
 - Visuals: `FAL_KEY` (FLUX images, Kling text-to-video)
 - Voice: `ELEVENLABS_API_KEY`
 
-## Render workers (FAV-807)
+## Job queue and workers (FAV-901/807)
 
-Renders are CPU-heavy and must not share compute with the web tier in
-production. Two options, both isolated + autoscaling:
+Jobs are queued in the `jobs` table. Enqueuing is just a row insert, so work
+survives a web-tier restart; workers claim with `FOR UPDATE SKIP LOCKED` and
+hold a time-boxed lease renewed by heartbeat. If a worker dies, its lease
+lapses and another worker reclaims the job — pipeline steps are idempotent, so
+the re-run resumes rather than repeating paid work.
 
-1. **Remotion Lambda** — serverless renders; wire `@fav/render` to
-   `@remotion/lambda` (`renderMediaOnLambda`) behind the same `RenderFn`
-   interface used by `defaultDeps`.
-2. **Container pool** — a worker image running `@fav/workflows` job consumers,
-   scaled on queue depth (e.g. Fly machines / ECS + queue length metric),
-   concurrency capped per worker (`SCENE_GENERATION_CONCURRENCY`).
+**Production topology:** run `apps/worker` as its own autoscaling pool so
+CPU-heavy renders never contend with request serving, and set
+`FAV_EMBEDDED_WORKER=0` on the web tier so it only enqueues.
 
-In both cases, replace the in-process runner (`apps/web/src/lib/runner.ts`)
-with your queue of choice (Inngest is the backlog's pick — the workflow
-functions are already step-shaped and idempotent) and point the autopilot
-scheduler (`/api/autopilot/sweep`) at a cron.
+```bash
+# web tier
+FAV_EMBEDDED_WORKER=0 FAV_SCHEDULERS=0 node apps/web/server.js
+# worker pool (scale on queue depth); exactly one replica sets FAV_WORKER_SCHEDULERS=1
+DATABASE_URL=... FAV_WORKER_CONCURRENCY=2 node apps/worker/dist/main.js
+```
+
+| Variable | Purpose |
+|---|---|
+| `FAV_WORKER_CONCURRENCY` | Jobs in flight per worker (default 2). Renders are heavy — raise cautiously. |
+| `FAV_WORKER_POLL_MS` | Idle poll interval (default 2000). |
+| `FAV_JOB_LEASE_MS` | Lease duration (default 120000); heartbeat renews at a third of it. Must exceed your longest step. |
+| `FAV_WORKER_SCHEDULERS` | `1` on exactly one replica to run autopilot + maintenance sweeps. |
+| `FAV_EMBEDDED_WORKER` | `0` on the web tier in production. |
+
+**The worker requires `DATABASE_URL`.** Without it the app uses embedded
+PGlite, which is single-writer and cannot be shared between processes — the
+worker would claim jobs the web tier never sees. It refuses to start in that
+case; for single-process dev, leave the embedded worker enabled instead.
+
+Autoscale on queue depth: `SELECT count(*) FROM jobs WHERE status = 'queued'`,
+also exposed via `GET /api/admin/health`.
+
+For renders specifically, `@fav/render` can be pointed at Remotion Lambda
+(`renderMediaOnLambda`) behind the same `RenderFn` interface `defaultDeps`
+uses, if you prefer serverless to a container pool.
 
 ## Publishing platform reviews
 

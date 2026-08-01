@@ -16,3 +16,14 @@ export {
 } from "./maintenance.js";
 export { computeNextRun, runAutopilotRule, sweepDueAutopilotRules } from "./autopilot.js";
 export { runMaintenance, enforceDeletionRetention, RETENTION, type MaintenanceResult } from "./retention.js";
+export {
+  startWorker,
+  claimNextJob,
+  runClaimedJob,
+  heartbeat,
+  reclaimExpiredLeases,
+  LEASE_MS,
+  type ClaimedJob,
+  type WorkerHandle,
+  type WorkerOptions
+} from "./queue.js";
