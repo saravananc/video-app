@@ -17,7 +17,7 @@ database, buckets, and secrets. Keep secrets in your platform's secret store
 | Service | Variable(s) | Notes |
 |---|---|---|
 | Postgres (Neon) | `DATABASE_URL` | FAV-104. Enable connection pooling (Neon pooler endpoint). Migrations: `pnpm db:migrate` in CI/deploy. |
-| Redis | `REDIS_URL` | Rate limiting + caching. The in-memory limiter is single-node only. |
+| Redis | `REDIS_URL` | **Required in production.** Rate limiting uses a sliding window over a Redis sorted set, evaluated atomically in Lua so the window is shared across the fleet. Without it the limiter falls back to in-memory: per-process, so limits multiply by instance count and reset on every deploy. A Redis outage fails *open* (requests allowed, error logged) so generation never goes down with it. |
 | Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | FAV-105. Create the bucket with least-privilege keys. Add a lifecycle rule expiring `videos/*/narration.*` after ~7 days (intermediates); final renders are kept. |
 | Clerk | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Maps to `users.auth_provider_id`; first login auto-provisions org + starter credits. |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Create products for starter/pro/scale plans + three top-up packs; point the webhook at `/api/webhooks/payments` with events `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`. |
