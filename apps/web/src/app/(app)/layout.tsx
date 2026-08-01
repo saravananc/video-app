@@ -20,9 +20,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/dashboard" className="transition-colors hover:text-text">
                 Videos
               </Link>
+              <Link href="/dashboard/voices" className="transition-colors hover:text-text">
+                Voices
+              </Link>
+              <Link href="/dashboard/social" className="transition-colors hover:text-text">
+                Social
+              </Link>
               <Link href="/billing" className="transition-colors hover:text-text">
                 Billing
               </Link>
+              {session.user.isStaff ? (
+                <Link href="/admin" className="transition-colors hover:text-text">
+                  Admin
+                </Link>
+              ) : null}
             </nav>
           </div>
           <div className="flex items-center gap-4 text-sm">

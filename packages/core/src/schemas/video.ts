@@ -23,6 +23,9 @@ export type VisualStyle = z.infer<typeof visualStyleSchema>;
 export const captionStyleSchema = z.enum(["bold", "karaoke", "impact", "clean", "none"]);
 export type CaptionStyle = z.infer<typeof captionStyleSchema>;
 
+export const transitionStyleSchema = z.enum(["none", "fade", "slide", "zoom"]);
+export type TransitionStyle = z.infer<typeof transitionStyleSchema>;
+
 export const toneSchema = z.enum([
   "informative",
   "dramatic",
@@ -53,6 +56,7 @@ export const videoRequestSchema = z.object({
   tier: qualityTierSchema.default("basic"),
   visualStyle: visualStyleSchema.default("cinematic"),
   captionStyle: captionStyleSchema.default("bold"),
+  transition: transitionStyleSchema.default("fade"),
   tone: toneSchema.default("informative"),
   voiceId: z.string().optional(),
   language: z.string().default("en"),

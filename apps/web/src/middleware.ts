@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/billing"];
+const PROTECTED_PREFIXES = ["/dashboard", "/billing", "/admin"];
 
 /**
  * Route protection (FAV-204). Edge-safe: checks session-cookie presence and
@@ -23,5 +23,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/billing/:path*"]
+  matcher: ["/dashboard/:path*", "/billing/:path*", "/admin/:path*"]
 };

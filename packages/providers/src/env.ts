@@ -101,6 +101,20 @@ import { MockPaymentsProvider } from "./payments/mock.js";
 import { StripePaymentsProvider } from "./payments/stripe.js";
 import type { PaymentsProvider } from "./payments/types.js";
 
+import { MockPublisherProvider } from "./publishers/mock.js";
+import { YouTubePublisherProvider } from "./publishers/youtube.js";
+import type { Platform, PublisherProvider } from "./publishers/types.js";
+
+export function getPublisherProvider(platform: Platform): PublisherProvider {
+  const baseUrl = process.env.FAV_BASE_URL ?? "http://localhost:3000";
+  if (platform === "youtube" && process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET) {
+    return new YouTubePublisherProvider(process.env.YOUTUBE_CLIENT_ID, process.env.YOUTUBE_CLIENT_SECRET);
+  }
+  // TikTok (FAV-1303) and Instagram (FAV-1304) real adapters land in Phase E;
+  // the mock exercises the same connect -> publish -> track loop for all three.
+  return new MockPublisherProvider(platform, baseUrl);
+}
+
 export function getPaymentsProvider(): PaymentsProvider {
   const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } = process.env;
   if (STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET) {

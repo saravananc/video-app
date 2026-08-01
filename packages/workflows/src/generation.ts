@@ -21,12 +21,19 @@ import {
   finalizeCredits,
   jobs,
   moderationDecisions,
+  musicTracks,
   refundCredits,
   reserveCredits,
   scenes as scenesTable,
   videos
 } from "@fav/db";
-import { assetKeys, withFallback, type StorageProvider } from "@fav/providers";
+import {
+  assetKeys,
+  getStreamingProvider,
+  synthesizeMusicTrack,
+  withFallback,
+  type StorageProvider
+} from "@fav/providers";
 import type { RenderProps } from "@fav/render";
 import type { PipelineDeps } from "./deps.js";
 
@@ -144,6 +151,26 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
         .update(videos)
         .set({ script, title: script.title, updatedAt: new Date() })
         .where(eq(videos.id, videoId));
+    }
+
+    // Output spot-check (FAV-1605): moderate the generated narration too; a
+    // blocked script is terminal, a flagged one proceeds but is logged.
+    const outputVerdict = await deps.moderation.moderate(
+      script.scenes.map((s) => s.narration).join(" ")
+    );
+    if (outputVerdict.verdict !== "allowed") {
+      await deps.db.insert(moderationDecisions).values({
+        id: newId("mod"),
+        orgId: job.orgId,
+        videoId,
+        stage: "output",
+        inputText: script.title,
+        verdict: outputVerdict.verdict,
+        categories: outputVerdict.categories
+      });
+      if (outputVerdict.verdict === "blocked") {
+        throw new TerminalJobError("The generated script violated content policy. Please try a different topic.");
+      }
     }
 
     // Materialize scene rows (idempotent: keyed on video+index).
@@ -346,12 +373,30 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
         })
       );
 
+      // Background music (FAV-805): the mock library synthesizes its track on
+      // first use so the keyless sandbox mixes real audio.
+      let musicUrl: string | undefined;
+      if (request.musicTrackId) {
+        const [track] = await deps.db
+          .select()
+          .from(musicTracks)
+          .where(eq(musicTracks.id, request.musicTrackId));
+        if (track) {
+          if (!(await deps.storage.exists(track.assetKey))) {
+            const wav = synthesizeMusicTrack(track.mood, track.durationSeconds);
+            await deps.storage.put(track.assetKey, wav, "audio/wav");
+          }
+          musicUrl = await assetUrl(deps.storage, track.assetKey, "audio/wav");
+        }
+      }
+
       const props: RenderProps = {
         scenes: renderScenes,
         audioUrl: await assetUrl(deps.storage, narrationKey, narrationContentType),
+        musicUrl,
         cues: cues as CaptionCue[],
         captionStyle: request.captionStyle,
-        transition: "fade",
+        transition: request.transition,
         width,
         height,
         fps: 30,
@@ -374,6 +419,23 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
         await deps.storage.put(finalKey, finalData, "video/mp4");
       } finally {
         await rm(tmpDir, { recursive: true, force: true });
+      }
+    }
+
+    // Streaming ingest (FAV-1002): Mux when configured; direct playback in dev.
+    if (!video.playbackId) {
+      const streaming = getStreamingProvider();
+      const ingested = await streaming
+        .ingest(await deps.storage.getSignedUrl(finalKey, 3600))
+        .catch((err) => {
+          console.warn(JSON.stringify({ event: "streaming_ingest_failed", videoId, error: String(err) }));
+          return null;
+        });
+      if (ingested) {
+        await deps.db
+          .update(videos)
+          .set({ playbackId: ingested.playbackId, updatedAt: new Date() })
+          .where(eq(videos.id, videoId));
       }
     }
 
@@ -444,7 +506,6 @@ export async function createGenerationJob(
 ): Promise<{ videoId: string; jobId: string }> {
   const request = videoRequestSchema.parse(args.request);
   const videoId = newId("vid");
-  const jobId = newId("job");
   await db.insert(videos).values({
     id: videoId,
     orgId: args.orgId,
@@ -453,14 +514,36 @@ export async function createGenerationJob(
     status: "queued",
     request
   });
+  const { jobId } = await enqueueGenerationRun(db, { orgId: args.orgId, videoId });
+  return { videoId, jobId };
+}
+
+/**
+ * Enqueue a (re-)generation run for an existing video. Steps are idempotent on
+ * domain state, so after scene edits or re-rolls only the invalidated
+ * artifacts regenerate (FAV-404/1103 re-render path).
+ */
+export async function enqueueGenerationRun(
+  db: PipelineDeps["db"],
+  args: { orgId: string; videoId: string }
+): Promise<{ jobId: string }> {
+  const existing = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.videoId, args.videoId), eq(jobs.kind, "generation")));
+  const jobId = newId("job");
   await db.insert(jobs).values({
     id: jobId,
     orgId: args.orgId,
-    videoId,
+    videoId: args.videoId,
     kind: "generation",
     status: "queued",
-    idempotencyKey: `generation:${videoId}`,
+    idempotencyKey: `generation:${args.videoId}:${existing.length}`,
     traceId: newId("trc")
   });
-  return { videoId, jobId };
+  await db
+    .update(videos)
+    .set({ status: "queued", errorMessage: null, updatedAt: new Date() })
+    .where(eq(videos.id, args.videoId));
+  return { jobId };
 }

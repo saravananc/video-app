@@ -52,12 +52,36 @@ const SceneLayer: React.FC<{
       break;
   }
 
+  // Transition treatments (FAV-803): fade cross-blends, slide pushes in, zoom punches in.
   let opacity = 1;
+  let transitionTransform = "";
+  const transFrames = TRANSITION_SEC * fps;
   if (transition === "fade") {
-    const fadeFrames = TRANSITION_SEC * fps;
     opacity = interpolate(
       frame,
-      [0, fadeFrames, durationFrames - fadeFrames, durationFrames],
+      [0, transFrames, durationFrames - transFrames, durationFrames],
+      [index === 0 ? 1 : 0, 1, 1, 0],
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    );
+  } else if (transition === "slide") {
+    const enter = interpolate(frame, [0, transFrames], [index === 0 ? 0 : 100, 0], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp"
+    });
+    transitionTransform = `translateX(${enter}%)`;
+    opacity = interpolate(frame, [durationFrames - transFrames, durationFrames], [1, 0], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp"
+    });
+  } else if (transition === "zoom") {
+    const enterScale = interpolate(frame, [0, transFrames], [index === 0 ? 1 : 1.35, 1], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp"
+    });
+    transitionTransform = `scale(${enterScale})`;
+    opacity = interpolate(
+      frame,
+      [0, transFrames * 0.6, durationFrames - transFrames, durationFrames],
       [index === 0 ? 1 : 0, 1, 1, 0],
       { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
     );
@@ -78,7 +102,7 @@ const SceneLayer: React.FC<{
   );
 
   return (
-    <AbsoluteFill style={{ opacity, backgroundColor: "#000" }}>
+    <AbsoluteFill style={{ opacity, backgroundColor: "#000", transform: transitionTransform || undefined }}>
       {media}
       {scene.onScreenText ? (
         <div
@@ -102,6 +126,22 @@ const SceneLayer: React.FC<{
   );
 };
 
+/** Background music ducked under narration (FAV-805): volume dips while words play. */
+const DuckedMusic: React.FC<{ musicUrl: string; cues: RenderProps["cues"] }> = ({ musicUrl, cues }) => {
+  const { fps } = useVideoConfig();
+  return (
+    <Audio
+      src={musicUrl}
+      loop
+      volume={(frame) => {
+        const tSec = frame / fps;
+        const narrating = cues.some((c) => tSec >= c.startSec - 0.1 && tSec < c.endSec + 0.1);
+        return narrating ? 0.07 : 0.22;
+      }}
+    />
+  );
+};
+
 /** The parameterized composition — props fully drive output (FAV-801). */
 export const FavComposition: React.FC<RenderProps> = (props) => {
   const { fps } = useVideoConfig();
@@ -119,7 +159,7 @@ export const FavComposition: React.FC<RenderProps> = (props) => {
         );
       })}
       <Audio src={props.audioUrl} />
-      {props.musicUrl ? <Audio src={props.musicUrl} volume={0.18} loop /> : null}
+      {props.musicUrl ? <DuckedMusic musicUrl={props.musicUrl} cues={props.cues} /> : null}
       <Captions cues={props.cues} style={props.captionStyle} />
     </AbsoluteFill>
   );

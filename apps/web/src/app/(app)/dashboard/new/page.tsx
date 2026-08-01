@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   estimateVideoCost,
@@ -10,6 +10,7 @@ import {
   type QualityTier,
   type Resolution,
   type Tone,
+  type TransitionStyle,
   type VisualStyle
 } from "@fav/core";
 import { Button, Card, PillGroup, Textarea } from "@/components/ui";
@@ -30,6 +31,29 @@ export default function NewVideoPage() {
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("bold");
   const [tone, setTone] = useState<Tone>("informative");
   const [voiceId, setVoiceId] = useState("voice_adam");
+  const [transition, setTransition] = useState<TransitionStyle>("fade");
+  const [musicTrackId, setMusicTrackId] = useState<string>("");
+  const [voiceOptions, setVoiceOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "voice_adam", label: "Adam — deep narrator" },
+    { value: "voice_bella", label: "Bella — warm storyteller" },
+    { value: "voice_josh", label: "Josh — energetic" }
+  ]);
+
+  useEffect(() => {
+    // Full library incl. clones + the user's default (FAV-602 selection persists).
+    void fetch("/api/voices", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (!body?.voices?.length) return;
+        setVoiceOptions(
+          body.voices.map((v: { id: string; name: string; description: string | null; isClone: boolean }) => ({
+            value: v.id,
+            label: `${v.name}${v.isClone ? " (clone)" : ""}${v.description ? ` — ${v.description}` : ""}`
+          }))
+        );
+        if (body.defaultVoiceId) setVoiceId(body.defaultVoiceId);
+      });
+  }, []);
 
   const request = useMemo(
     () =>
@@ -42,9 +66,11 @@ export default function NewVideoPage() {
         visualStyle,
         captionStyle,
         tone,
-        voiceId
+        voiceId,
+        transition,
+        musicTrackId: musicTrackId || undefined
       }),
-    [topic, durationSeconds, tier, aspectRatio, resolution, visualStyle, captionStyle, tone, voiceId]
+    [topic, durationSeconds, tier, aspectRatio, resolution, visualStyle, captionStyle, tone, voiceId, transition, musicTrackId]
   );
   // Same cost table the server charges from (FAV-1207), so the estimate never lies.
   const estimate = useMemo(() => estimateVideoCost(request), [request]);
@@ -195,14 +221,27 @@ export default function NewVideoPage() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Voice</label>
+            <PillGroup options={voiceOptions} value={voiceId} onChange={setVoiceId} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Scene transition</label>
+            <PillGroup
+              options={(["fade", "slide", "zoom", "none"] as TransitionStyle[]).map((t) => ({ value: t, label: t }))}
+              value={transition}
+              onChange={setTransition}
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Background music</label>
             <PillGroup
               options={[
-                { value: "voice_adam", label: "Adam — deep narrator" },
-                { value: "voice_bella", label: "Bella — warm storyteller" },
-                { value: "voice_josh", label: "Josh — energetic" }
+                { value: "", label: "No music" },
+                { value: "music_uplift", label: "Uplift — inspirational" },
+                { value: "music_pulse", label: "Pulse — energetic" },
+                { value: "music_drift", label: "Drift — calm" }
               ]}
-              value={voiceId as "voice_adam" | "voice_bella" | "voice_josh"}
-              onChange={setVoiceId}
+              value={musicTrackId}
+              onChange={setMusicTrackId}
             />
           </div>
           <div className="flex justify-between">

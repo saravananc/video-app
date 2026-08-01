@@ -3,6 +3,8 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, Card, ProgressBar, Skeleton, StatusBadge } from "@/components/ui";
+import { SceneEditor } from "./scene-editor";
+import { PublishPanel } from "./publish-panel";
 
 interface VideoDetail {
   video: {
@@ -25,18 +27,22 @@ interface VideoDetail {
     id: string;
     index: number;
     narration: string;
+    visualPrompt: string;
+    onScreenText: string | null;
     status: string;
     imageUrl: string | null;
   }>;
 }
 
-const TERMINAL = new Set(["completed", "failed", "canceled"]);
+const TERMINAL = new Set(["completed", "failed", "canceled", "draft"]);
 
-/** Real-time progress + playback + download (FAV-1104/1105/1004). */
+/** Video detail: progress (FAV-1104), player + download (FAV-1105), scene editor
+ * (FAV-1103), and publishing (FAV-1302). */
 export default function VideoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [data, setData] = useState<VideoDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [rerenderBusy, setRerenderBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -53,16 +59,22 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
   useEffect(() => {
     void load();
-    timer.current = setInterval(async () => {
-      const body = await load();
-      if (body && TERMINAL.has(body.video.status) && timer.current) {
-        clearInterval(timer.current);
-      }
-    }, 2500);
+    timer.current = setInterval(load, 2500);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
   }, [load]);
+
+  async function rerender(fullScript = false) {
+    setRerenderBusy(true);
+    await fetch(`/api/videos/${id}/regenerate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fullScript })
+    });
+    setRerenderBusy(false);
+    void load();
+  }
 
   if (notFound) {
     return (
@@ -87,6 +99,7 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
   const { video, job, scenes } = data;
   const generating = !TERMINAL.has(video.status);
+  const editable = TERMINAL.has(video.status);
 
   return (
     <div className="flex flex-col gap-6">
@@ -103,13 +116,8 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
 
       {generating && (
         <Card>
-          <ProgressBar
-            percent={job?.progress?.percent ?? 0}
-            label={job?.progress?.stageLabel ?? "Starting…"}
-          />
-          {job?.progress?.detail ? (
-            <p className="mt-2 text-xs text-text-muted">{job.progress.detail}</p>
-          ) : null}
+          <ProgressBar percent={job?.progress?.percent ?? 0} label={job?.progress?.stageLabel ?? "Starting…"} />
+          {job?.progress?.detail ? <p className="mt-2 text-xs text-text-muted">{job.progress.detail}</p> : null}
         </Card>
       )}
 
@@ -117,25 +125,47 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
         <Card className="border-danger/40 bg-danger/5">
           <p className="font-medium text-danger">Generation failed — credits refunded</p>
           <p className="mt-1 text-sm text-text-muted">{video.errorMessage ?? job?.error ?? "Unknown error"}</p>
-          <Link href="/dashboard/new">
-            <Button variant="secondary" className="mt-3">
-              Try a different topic
+          <div className="mt-3 flex gap-2">
+            <Button variant="secondary" disabled={rerenderBusy} onClick={() => rerender(false)}>
+              Retry
             </Button>
-          </Link>
+            <Link href="/dashboard/new">
+              <Button variant="ghost">Try a different topic</Button>
+            </Link>
+          </div>
+        </Card>
+      )}
+
+      {video.status === "draft" && (
+        <Card className="border-warning/40 bg-warning/5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">Changes pending</p>
+              <p className="text-sm text-text-muted">
+                Your edits are saved. Re-render to bake them into a new video — only the changed pieces regenerate.
+              </p>
+            </div>
+            <Button disabled={rerenderBusy} onClick={() => rerender(false)}>
+              {rerenderBusy ? "Starting…" : "Apply & re-render"}
+            </Button>
+          </div>
         </Card>
       )}
 
       {video.status === "completed" && video.finalUrl && (
         <Card className="flex flex-col items-center gap-4">
-          <video
-            src={video.finalUrl}
-            controls
-            className="max-h-[70vh] rounded-lg border border-border-token bg-black"
-          />
+          <video src={video.finalUrl} controls className="max-h-[70vh] rounded-lg border border-border-token bg-black" />
           <div className="flex items-center gap-3">
             <a href={video.finalUrl} download={`${video.title.replace(/[^\w-]+/g, "_")}.mp4`}>
               <Button>Download MP4</Button>
             </a>
+            <Button
+              variant="secondary"
+              onClick={() => navigator.clipboard.writeText(video.finalUrl!)}
+              title="Copy signed link"
+            >
+              Copy link
+            </Button>
             <p className="text-sm text-text-muted">
               {video.durationSeconds ? `${Math.round(video.durationSeconds)}s` : ""} ·{" "}
               {video.creditsCharged ?? video.creditsEstimated} credits
@@ -144,27 +174,21 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
       )}
 
+      {video.status === "completed" && <PublishPanel videoId={video.id} defaultTitle={video.title} />}
+
       {scenes.length > 0 && (
         <div>
-          <h2 className="mb-3 text-lg font-semibold">Scenes</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Scenes</h2>
+            {editable && (
+              <Button variant="ghost" disabled={rerenderBusy} onClick={() => rerender(true)}>
+                Regenerate whole script
+              </Button>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {scenes.map((scene) => (
-              <Card key={scene.id} className="flex flex-col gap-2 p-3">
-                {scene.imageUrl ? (
-                  <img
-                    src={scene.imageUrl}
-                    alt={`Scene ${scene.index + 1}`}
-                    className="aspect-[9/16] w-full rounded-md object-cover"
-                  />
-                ) : (
-                  <div className="flex aspect-[9/16] w-full items-center justify-center rounded-md bg-bg-subtle">
-                    <StatusBadge status={scene.status} />
-                  </div>
-                )}
-                <p className="line-clamp-3 text-xs text-text-muted">
-                  <span className="font-medium text-text">#{scene.index + 1}</span> {scene.narration}
-                </p>
-              </Card>
+              <SceneEditor key={scene.id} videoId={video.id} scene={scene} editable={editable} onChanged={load} />
             ))}
           </div>
         </div>
