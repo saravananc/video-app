@@ -84,7 +84,11 @@ export function validatePassword(password: string, email?: string): PasswordProb
   if (password.length > 200) return { ok: false, message: "Password must be under 200 characters." };
   const lower = password.toLowerCase();
   if (COMMON.has(lower)) return { ok: false, message: "That password is too common. Choose another." };
-  if (email && lower.includes(email.split("@")[0]!.toLowerCase())) {
+
+  // Only meaningful for a local part long enough to be identifying — otherwise
+  // an address like jo@example.com would reject every password containing "jo".
+  const localPart = email?.split("@")[0]?.toLowerCase();
+  if (localPart && localPart.length >= 4 && lower.includes(localPart)) {
     return { ok: false, message: "Password must not contain your email address." };
   }
   return { ok: true };

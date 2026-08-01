@@ -50,6 +50,13 @@ describe("password policy", () => {
     expect(validatePassword("jsmith-is-my-password", "jsmith@example.com").ok).toBe(false);
     expect(validatePassword("unrelated-strong-phrase", "jsmith@example.com").ok).toBe(true);
   });
+
+  it("ignores very short email local parts, which would reject almost anything", () => {
+    // "jo" appears in plenty of good passwords; rejecting on it is user-hostile.
+    expect(validatePassword("enjoyable-long-passphrase", "jo@example.com").ok).toBe(true);
+    // A local part long enough to be identifying is still checked.
+    expect(validatePassword("john-favourite-phrase", "john@example.com").ok).toBe(false);
+  });
 });
 
 describe("tokens", () => {
