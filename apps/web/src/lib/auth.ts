@@ -2,20 +2,36 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { newId, STARTER_CREDITS, type Role } from "@fav/core";
-import { appendLedgerEntry, getDb, memberships, organizations, users } from "@fav/db";
+import { appendLedgerEntry, getDb, issueAuthToken, memberships, organizations, users } from "@fav/db";
+import {
+  generateToken,
+  getEmailProvider,
+  hashPassword,
+  needsRehash,
+  validatePassword,
+  verifyPassword
+} from "@fav/providers";
 
 export const SESSION_COOKIE = "fav_session";
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 
+/** Lockout after repeated failures (FAV-201): slows credential stuffing. */
+const MAX_FAILED_ATTEMPTS = 8;
+const LOCKOUT_MS = 15 * 60 * 1000;
+
 function secret(): string {
-  return process.env.FAV_SESSION_SECRET ?? "dev-session-secret";
+  const configured = process.env.FAV_SESSION_SECRET;
+  if (!configured && process.env.NODE_ENV === "production") {
+    throw new Error("FAV_SESSION_SECRET must be set in production");
+  }
+  return configured ?? "dev-session-secret";
 }
 
 function sign(payload: string): string {
   return createHmac("sha256", secret()).update(payload).digest("hex");
 }
 
-/** Signed local session token: userId.expiresAt.hmac (FAV-201 dev fallback). */
+/** Signed session token: userId.expiresAt.hmac. */
 export function createSessionToken(userId: string): string {
   const expiresAt = Date.now() + SESSION_TTL_MS;
   const payload = `${userId}.${expiresAt}`;
@@ -34,19 +50,22 @@ export function verifySessionToken(token: string): string | null {
   return userId;
 }
 
+export const sessionCookieOptions = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: process.env.NODE_ENV === "production",
+  maxAge: SESSION_TTL_MS / 1000,
+  path: "/"
+};
+
 export interface Session {
   userId: string;
   orgId: string;
   role: Role;
-  user: { id: string; email: string; name: string | null; isStaff: boolean };
+  user: { id: string; email: string; name: string | null; isStaff: boolean; emailVerified: boolean };
   org: { id: string; name: string; plan: string; cachedBalance: number };
 }
 
-/**
- * Resolve the current session (FAV-204). Local cookie sessions in dev; when
- * Clerk keys are configured the Clerk middleware population takes precedence
- * (its user id lands in the same users.auth_provider_id mapping).
- */
 export async function getSession(): Promise<Session | null> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
@@ -66,12 +85,7 @@ export async function getSession(): Promise<Session | null> {
       .select()
       .from(impersonationSessions)
       .where(eq(impersonationSessions.id, impersonationId));
-    if (
-      imp &&
-      imp.staffUserId === userId &&
-      !imp.endedAt &&
-      imp.expiresAt.getTime() > Date.now()
-    ) {
+    if (imp && imp.staffUserId === userId && !imp.endedAt && imp.expiresAt.getTime() > Date.now()) {
       const [org] = await db.select().from(orgsTable).where(eq(orgsTable.id, imp.targetOrgId));
       if (org) {
         return {
@@ -107,7 +121,13 @@ export async function sessionForUser(userId: string): Promise<Session | null> {
     userId,
     orgId: membership.orgId,
     role: membership.role,
-    user: { id: user.id, email: user.email, name: user.name, isStaff: user.isStaff },
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      isStaff: user.isStaff,
+      emailVerified: user.emailVerifiedAt !== null
+    },
     org: {
       id: membership.orgId,
       name: membership.orgName,
@@ -117,11 +137,141 @@ export async function sessionForUser(userId: string): Promise<Session | null> {
   };
 }
 
+function baseUrl(): string {
+  return process.env.FAV_BASE_URL ?? "http://localhost:3000";
+}
+
+export async function sendVerificationEmail(userId: string, email: string): Promise<void> {
+  const token = generateToken();
+  await issueAuthToken(getDb(), userId, "email_verification", token);
+  await getEmailProvider().send({
+    to: email,
+    subject: "Verify your FAV Studio email",
+    text: `Confirm your email address to finish setting up your account:\n\n${baseUrl()}/verify-email?token=${token}\n\nThis link expires in 24 hours. If you didn't sign up, you can ignore this message.`
+  });
+}
+
+export class SignupError extends Error {}
+
 /**
- * First-signup provisioning (FAV-202/1208): create the user, auto-create their
- * org, owner membership, and grant starter credits — no card required.
+ * Create an account (FAV-201/202/1208): user with a hashed password, an
+ * auto-created org with owner membership, and starter credits — no card.
  */
-export async function provisionUser(args: {
+export async function signUp(args: {
+  email: string;
+  password: string;
+  name?: string;
+}): Promise<{ userId: string; orgId: string }> {
+  const email = args.email.trim().toLowerCase();
+  const policy = validatePassword(args.password, email);
+  if (!policy.ok) throw new SignupError(policy.message ?? "Password rejected");
+
+  const db = getDb();
+  const [existing] = await db.select().from(users).where(eq(users.email, email));
+  if (existing) {
+    // Don't confirm whether an address is registered.
+    throw new SignupError("If that email is available, you'll receive a verification link.");
+  }
+
+  const userId = newId("user");
+  const orgId = newId("org");
+  await db.insert(users).values({
+    id: userId,
+    authProviderId: `local:${email}`,
+    email,
+    name: args.name?.trim() || null,
+    passwordHash: await hashPassword(args.password)
+  });
+  await db.insert(organizations).values({
+    id: orgId,
+    name: args.name ? `${args.name.trim()}'s Studio` : "My Studio",
+    slug: orgId.replace("org_", "")
+  });
+  await db.insert(memberships).values({ id: newId("mem"), orgId, userId, role: "owner" });
+  await appendLedgerEntry(db, {
+    orgId,
+    entryType: "grant",
+    amount: STARTER_CREDITS,
+    reason: "Starter credits on signup"
+  });
+
+  await sendVerificationEmail(userId, email);
+  return { userId, orgId };
+}
+
+export type SignInResult =
+  | { ok: true; userId: string }
+  | { ok: false; reason: "invalid" | "locked"; retryAfterSeconds?: number };
+
+/**
+ * Verify credentials (FAV-201). Failures are deliberately indistinguishable
+ * between "no such user" and "wrong password", and a dummy hash comparison
+ * keeps timing similar for unknown addresses.
+ */
+export async function signIn(email: string, password: string): Promise<SignInResult> {
+  const db = getDb();
+  const [user] = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase()));
+
+  if (!user?.passwordHash) {
+    await verifyPassword(password, "scrypt$131072$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAA");
+    return { ok: false, reason: "invalid" };
+  }
+
+  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+    return {
+      ok: false,
+      reason: "locked",
+      retryAfterSeconds: Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000)
+    };
+  }
+
+  if (!(await verifyPassword(password, user.passwordHash))) {
+    const attempts = user.failedLoginAttempts + 1;
+    await db
+      .update(users)
+      .set({
+        failedLoginAttempts: attempts,
+        lockedUntil: attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_MS) : null,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, user.id));
+    return { ok: false, reason: "invalid" };
+  }
+
+  // Success: clear the failure counter, and transparently upgrade the hash if
+  // it predates a cost-parameter bump.
+  await db
+    .update(users)
+    .set({
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+      ...(needsRehash(user.passwordHash) ? { passwordHash: await hashPassword(password) } : {}),
+      updatedAt: new Date()
+    })
+    .where(eq(users.id, user.id));
+  return { ok: true, userId: user.id };
+}
+
+/** Password reset request. Always reports success so addresses can't be probed. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const db = getDb();
+  const [user] = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase()));
+  if (!user?.passwordHash) return;
+
+  const token = generateToken();
+  await issueAuthToken(db, user.id, "password_reset", token);
+  await getEmailProvider().send({
+    to: user.email,
+    subject: "Reset your FAV Studio password",
+    text: `Reset your password here:\n\n${baseUrl()}/reset-password?token=${token}\n\nThis link expires in 1 hour and can be used once. If you didn't request it, ignore this message — your password is unchanged.`
+  });
+}
+
+/**
+ * Provision a user authenticated by an external provider (Clerk/OAuth). They
+ * have no local password; identity is asserted upstream.
+ */
+export async function provisionExternalUser(args: {
   authProviderId: string;
   email: string;
   name?: string;
@@ -129,10 +279,7 @@ export async function provisionUser(args: {
   const db = getDb();
   const [existing] = await db.select().from(users).where(eq(users.authProviderId, args.authProviderId));
   if (existing) {
-    const [membership] = await db
-      .select()
-      .from(memberships)
-      .where(eq(memberships.userId, existing.id));
+    const [membership] = await db.select().from(memberships).where(eq(memberships.userId, existing.id));
     if (membership) return { userId: existing.id, orgId: membership.orgId };
   }
 
@@ -142,15 +289,16 @@ export async function provisionUser(args: {
     await db.insert(users).values({
       id: userId,
       authProviderId: args.authProviderId,
-      email: args.email,
-      name: args.name
+      email: args.email.toLowerCase(),
+      name: args.name,
+      // Upstream provider already verified the address.
+      emailVerifiedAt: new Date()
     });
   }
-  const orgName = args.name ? `${args.name}'s Studio` : "My Studio";
   await db.insert(organizations).values({
     id: orgId,
-    name: orgName,
-    slug: `${orgId.replace("org_", "")}`
+    name: args.name ? `${args.name}'s Studio` : "My Studio",
+    slug: orgId.replace("org_", "")
   });
   await db.insert(memberships).values({ id: newId("mem"), orgId, userId, role: "owner" });
   await appendLedgerEntry(db, {

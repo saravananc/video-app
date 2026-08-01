@@ -220,6 +220,9 @@ importers:
       '@fav/core':
         specifier: workspace:*
         version: link:../core
+      '@fav/providers':
+        specifier: workspace:*
+        version: link:../providers
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(@electric-sql/pglite@0.3.16)(@types/pg@8.20.3)(pg@8.22.0)

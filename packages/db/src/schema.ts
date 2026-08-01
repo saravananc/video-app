@@ -81,6 +81,15 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name"),
     avatarUrl: text("avatar_url"),
+    /**
+     * scrypt hash (FAV-201). Null for users authenticated by an external
+     * provider (Clerk, OAuth), who have no local password.
+     */
+    passwordHash: text("password_hash"),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    /** Set while locked out after repeated failed logins. */
+    failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
     isStaff: boolean("is_staff").notNull().default(false),
     defaultVoiceId: text("default_voice_id"),
     createdAt: createdAt(),
@@ -128,6 +137,29 @@ export const memberships = pgTable(
     uniqueIndex("memberships_org_user_idx").on(t.orgId, t.userId),
     index("memberships_user_idx").on(t.userId)
   ]
+);
+
+export const authTokenPurpose = pgEnum("auth_token_purpose", ["email_verification", "password_reset"]);
+
+/**
+ * Single-use, expiring tokens for email verification and password reset
+ * (FAV-201). Only a SHA-256 hash is stored, so a database leak doesn't hand
+ * over working reset links.
+ */
+export const authTokens = pgTable(
+  "auth_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: authTokenPurpose("purpose").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt()
+  },
+  (t) => [uniqueIndex("auth_tokens_hash_idx").on(t.tokenHash), index("auth_tokens_user_idx").on(t.userId, t.purpose)]
 );
 
 export const invites = pgTable(

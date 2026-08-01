@@ -2,12 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDb, resolveFlags } from "@fav/db";
 import { getSession } from "@/lib/auth";
-import { ensureSchedulers } from "@/lib/runner";
 import { LogoutButton } from "@/components/logout-button";
 
 /** Authenticated app shell: nav with org, balance, and sign-out (FAV-204). */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  ensureSchedulers();
   const session = await getSession();
   if (!session) redirect("/login");
   // Nav only shows features enabled for this org (FAV-1703).

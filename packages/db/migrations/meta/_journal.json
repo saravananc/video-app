@@ -15,6 +15,13 @@
       "when": 1785602388387,
       "tag": "0001_job_queue_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785603923017,
+      "tag": "0002_auth_credentials",
+      "breakpoints": true
     }
   ]
 }

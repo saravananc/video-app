@@ -23,6 +23,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.3.0",
     "@fav/core": "workspace:*",
+    "@fav/providers": "workspace:*",
     "drizzle-orm": "^0.44.0",
     "pg": "^8.13.0",
     "zod": "^3.25.0"

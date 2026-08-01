@@ -1,37 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createSessionToken, provisionUser, SESSION_COOKIE } from "@/lib/auth";
+import { getRateLimiter } from "@fav/providers";
+import { createSessionToken, sessionCookieOptions, SESSION_COOKIE, signUp, SignupError } from "@/lib/auth";
 
 const signupSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().max(200),
+  password: z.string().min(1).max(200),
   name: z.string().min(1).max(80).optional()
 });
 
-/**
- * Local signup (FAV-202/1208): creates user + auto-created org + owner role +
- * starter credits, then signs in. With Clerk configured, provisioning instead
- * happens on first authenticated request.
- */
+/** Create an account (FAV-201/202/1208). */
 export async function POST(req: NextRequest) {
   if (process.env.CLERK_SECRET_KEY) {
     return NextResponse.json({ error: "Local signup disabled — Clerk is active" }, { status: 400 });
   }
+
+  // Per-IP throttle so signup can't be used to mass-create orgs or spam email.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const limit = await getRateLimiter("signup", 5, 15 * 60_000).check(ip);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many signups from this address. Try again shortly." },
+      { status: 429, headers: { "retry-after": String(limit.retryAfterSeconds) } }
+    );
+  }
+
   const parsed = signupSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Enter a valid email address and password." }, { status: 400 });
+  }
 
-  const email = parsed.data.email.toLowerCase();
-  const { userId, orgId } = await provisionUser({
-    authProviderId: `local:${email}`,
-    email,
-    name: parsed.data.name
-  });
-
-  const res = NextResponse.json({ ok: true, userId, orgId }, { status: 201 });
-  res.cookies.set(SESSION_COOKIE, createSessionToken(userId), {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 3600,
-    path: "/"
-  });
-  return res;
+  try {
+    const { userId, orgId } = await signUp(parsed.data);
+    const res = NextResponse.json({ ok: true, userId, orgId, verificationRequired: true }, { status: 201 });
+    res.cookies.set(SESSION_COOKIE, createSessionToken(userId), sessionCookieOptions);
+    return res;
+  } catch (err) {
+    if (err instanceof SignupError) return NextResponse.json({ error: err.message }, { status: 400 });
+    throw err;
+  }
 }

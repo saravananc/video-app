@@ -1,5 +1,9 @@
 import { eq } from "drizzle-orm";
 import { STARTER_CREDITS } from "@fav/core";
+import { hashPassword } from "@fav/providers";
+
+/** Password for the seeded demo accounts (development only). */
+export const DEMO_PASSWORD = "demo-password-123";
 import type { Db } from "./client.js";
 import {
   featureFlags,
@@ -28,14 +32,21 @@ export async function seed(db: Db): Promise<{ orgId: string }> {
     .values({ id: orgId, name: "Demo Studio", slug: "demo-studio" })
     .onConflictDoNothing();
 
+  // Demo accounts sign in with a real password like any other user; the seed
+  // is the only place this credential exists and it never ships to production
+  // (seeding is opt-in via FAV_AUTO_SEED).
+  const demoPasswordHash = await hashPassword(DEMO_PASSWORD);
+
   for (const u of [owner, admin, member]) {
     await db
       .insert(users)
       .values({
         id: u.id,
-        authProviderId: `local:${u.id}`,
+        authProviderId: `local:${u.email}`,
         email: u.email,
         name: u.name,
+        passwordHash: demoPasswordHash,
+        emailVerifiedAt: new Date(),
         isStaff: u.role === "owner"
       })
       .onConflictDoNothing();

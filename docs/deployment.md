@@ -5,6 +5,28 @@ mock providers). Production replaces each mock with a managed service purely
 through environment variables — no code changes. This document covers the
 infra-only backlog items (FAV-103/104/105, FAV-807, and platform app reviews).
 
+## Fail-fast configuration
+
+The server refuses to boot in production without `FAV_SESSION_SECRET`,
+`FAV_ENCRYPTION_KEY`, `FAV_STORAGE_SIGNING_SECRET`, and `DATABASE_URL`, so a
+misconfigured deploy fails immediately instead of serving traffic on
+development defaults. `FAV_ALLOW_INSECURE_DEFAULTS=1` bypasses the check —
+only ever for local production-mode testing.
+
+## Authentication (FAV-201)
+
+Email and password, built in: scrypt hashing (N=2¹⁷, cost parameters stored
+per-hash so they can be raised later and old hashes upgrade transparently on
+login), single-use expiring tokens for email verification and password reset
+(stored as SHA-256 hashes, so a database leak yields no working links), a
+per-account lockout after 8 failed attempts, and per-IP throttles on login,
+signup, and reset. Login and reset responses are identical for unknown and
+known addresses so accounts can't be enumerated.
+
+Sessions are HMAC-signed cookies (`httpOnly`, `sameSite=lax`, `secure` in
+production). To move to Clerk or OAuth later, call `provisionExternalUser`
+from the callback — the org/membership/starter-credit provisioning is shared.
+
 ## Environments (FAV-103)
 
 Run three isolated environments — dev, staging, prod — each with its own
@@ -19,7 +41,8 @@ database, buckets, and secrets. Keep secrets in your platform's secret store
 | Postgres (Neon) | `DATABASE_URL` | FAV-104. Enable connection pooling (Neon pooler endpoint). Migrations: `pnpm db:migrate` in CI/deploy. |
 | Redis | `REDIS_URL` | **Required in production.** Rate limiting uses a sliding window over a Redis sorted set, evaluated atomically in Lua so the window is shared across the fleet. Without it the limiter falls back to in-memory: per-process, so limits multiply by instance count and reset on every deploy. A Redis outage fails *open* (requests allowed, error logged) so generation never goes down with it. |
 | Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | FAV-105. Create the bucket with least-privilege keys. Add a lifecycle rule expiring `videos/*/narration.*` after ~7 days (intermediates); final renders are kept. |
-| Clerk | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Maps to `users.auth_provider_id`; first login auto-provisions org + starter credits. |
+| Email | `RESEND_API_KEY`, `EMAIL_FROM` | **Required in production.** Verification and password-reset links. Without it the console provider logs messages instead of sending them. |
+| Clerk (optional) | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Not integrated yet. Built-in email+password auth is the default; `provisionExternalUser` is the hook for adding Clerk or OAuth, mapping to `users.auth_provider_id`. |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Create products for starter/pro/scale plans + three top-up packs; point the webhook at `/api/webhooks/payments` with events `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`. |
 | Mux | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Optional adaptive streaming; without it the app serves the MP4 directly. |
 | Sentry / PostHog | `SENTRY_DSN`, `NEXT_PUBLIC_POSTHOG_KEY` | Observability hooks. |

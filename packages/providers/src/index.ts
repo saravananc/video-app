@@ -18,6 +18,8 @@ export { MockPaymentsProvider } from "./payments/mock.js";
 export { StripePaymentsProvider } from "./payments/stripe.js";
 export * from "./ratelimit.js";
 export * from "./crypto.js";
+export * from "./password.js";
+export * from "./email/index.js";
 export * from "./publishers/types.js";
 export { MockPublisherProvider } from "./publishers/mock.js";
 export { YouTubePublisherProvider } from "./publishers/youtube.js";
