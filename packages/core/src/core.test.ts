@@ -76,6 +76,29 @@ describe("video config", () => {
   });
 });
 
+describe("roles (FAV-203)", async () => {
+  const { canManageBilling, canManageOrg, canCreateVideos, canInvite, roleAtLeast } = await import("./roles.js");
+
+  it("billing limited to owner/admin", () => {
+    expect(canManageBilling("owner")).toBe(true);
+    expect(canManageBilling("admin")).toBe(true);
+    expect(canManageBilling("member")).toBe(false);
+  });
+
+  it("org management is owner-only", () => {
+    expect(canManageOrg("owner")).toBe(true);
+    expect(canManageOrg("admin")).toBe(false);
+  });
+
+  it("all roles can create videos; invites need admin+", () => {
+    expect(canCreateVideos("member")).toBe(true);
+    expect(canInvite("member")).toBe(false);
+    expect(canInvite("admin")).toBe(true);
+    expect(roleAtLeast("admin", "member")).toBe(true);
+    expect(roleAtLeast("member", "owner")).toBe(false);
+  });
+});
+
 describe("progress model (FAV-905)", () => {
   it("percent is monotonic across stages", () => {
     const early = overallPercent({ stage: "scripting", stageProgress: 100 });

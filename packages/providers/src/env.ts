@@ -96,3 +96,25 @@ export function getStorageProvider(): StorageProvider {
 export function resetStorageProvider(): void {
   storageSingleton = null;
 }
+
+import { MockPaymentsProvider } from "./payments/mock.js";
+import { StripePaymentsProvider } from "./payments/stripe.js";
+import type { PaymentsProvider } from "./payments/types.js";
+
+export function getPaymentsProvider(): PaymentsProvider {
+  const { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET } = process.env;
+  if (STRIPE_SECRET_KEY && STRIPE_WEBHOOK_SECRET) {
+    return new StripePaymentsProvider(STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, {
+      starter: process.env.STRIPE_PRICE_STARTER ?? "",
+      pro: process.env.STRIPE_PRICE_PRO ?? "",
+      scale: process.env.STRIPE_PRICE_SCALE ?? "",
+      pack_small: process.env.STRIPE_PRICE_PACK_SMALL ?? "",
+      pack_medium: process.env.STRIPE_PRICE_PACK_MEDIUM ?? "",
+      pack_large: process.env.STRIPE_PRICE_PACK_LARGE ?? ""
+    });
+  }
+  return new MockPaymentsProvider(
+    process.env.FAV_PAYMENTS_SECRET ?? "dev-payments-secret",
+    process.env.FAV_BASE_URL ?? "http://localhost:3000"
+  );
+}

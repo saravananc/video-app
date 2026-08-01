@@ -3,14 +3,21 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb, jobs, scenes, videos } from "@fav/db";
 import { overallPercent, STAGE_LABELS, pipelineStageSchema } from "@fav/core";
 import { getStorageProvider } from "@fav/providers";
-import { getCurrentOrgContext } from "@/lib/org";
+import { authErrorResponse, requireSession } from "@/lib/org";
 
 export const dynamic = "force-dynamic";
 
 /** Video detail + live job progress + scenes (FAV-1104 poll target). */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  const { orgId } = await getCurrentOrgContext();
+  let orgId: string;
+  try {
+    ({ orgId } = await requireSession());
+  } catch (err) {
+    const auth = authErrorResponse(err);
+    if (auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    throw err;
+  }
   const db = getDb();
 
   const [video] = await db

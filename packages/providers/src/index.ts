@@ -13,3 +13,7 @@ export { MockModerationProvider } from "./moderation/mock.js";
 export { FsStorageProvider } from "./storage/fs.js";
 export { R2StorageProvider } from "./storage/r2.js";
 export { encodeWav, wavDurationSeconds, SAMPLE_RATE } from "./audio/wav.js";
+export * from "./payments/types.js";
+export { MockPaymentsProvider } from "./payments/mock.js";
+export { StripePaymentsProvider } from "./payments/stripe.js";
+export * from "./ratelimit.js";
