@@ -1,0 +1,28 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+.next/
+dist/
+out/
+.turbo/
+*.tsbuildinfo
+
+# env & secrets — never commit real keys
+.env
+.env.local
+.env.*.local
+
+# local data (PGlite database, filesystem storage adapter, rendered assets)
+.data/
+*.mp4
+*.wav
+
+# logs
+*.log
+
+# editor
+.idea/
+.vscode/
+.DS_Store

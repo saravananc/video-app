@@ -1,0 +1,40 @@
+{
+  "name": "@fav/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed-cli.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "@fav/core": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "pg": "^8.13.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@fav/config": "workspace:*",
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.11.0",
+    "drizzle-kit": "^0.31.0",
+    "eslint": "^9.20.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

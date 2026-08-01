@@ -1,0 +1,17 @@
+{
+  "name": "@fav/config",
+  "version": "0.0.0",
+  "private": true,
+  "files": ["tsconfig.base.json", "tsconfig.library.json", "tsconfig.nextjs.json", "eslint.base.mjs"],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.library.json": "./tsconfig.library.json",
+    "./tsconfig.nextjs.json": "./tsconfig.nextjs.json",
+    "./eslint": "./eslint.base.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "eslint": "^9.20.0",
+    "typescript-eslint": "^8.24.0"
+  }
+}

@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* Design tokens (FAV-106): dark-first with a light override, consumed via Tailwind arbitrary values
+   and the semantic utilities below. */
+:root {
+  --bg: #0b0d12;
+  --bg-elevated: #12151d;
+  --bg-subtle: #1a1e29;
+  --border: #262b38;
+  --text: #e8eaf0;
+  --text-muted: #9aa1b2;
+  --accent: #7c5cff;
+  --accent-hover: #8f73ff;
+  --accent-fg: #ffffff;
+  --success: #3ecf8e;
+  --warning: #f5a623;
+  --danger: #f0506e;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f8fa;
+    --bg-elevated: #ffffff;
+    --bg-subtle: #eef0f4;
+    --border: #dfe3ea;
+    --text: #14161c;
+    --text-muted: #5d6472;
+    --accent: #6442e8;
+    --accent-hover: #5233d1;
+    --accent-fg: #ffffff;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-border-token: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
