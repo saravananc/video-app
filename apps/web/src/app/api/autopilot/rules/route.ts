@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { newId } from "@fav/core";
+import { FLAG_KEYS, newId } from "@fav/core";
 import { autopilotRules, getDb } from "@fav/db";
 import { computeNextRun } from "@fav/workflows";
-import { authErrorResponse, requireVideoAccess } from "@/lib/org";
+import { authErrorResponse, requireFeature, requireVideoAccess } from "@/lib/org";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +49,7 @@ const ruleSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const session = await requireVideoAccess();
+    await requireFeature(session.orgId, FLAG_KEYS.autopilot);
     const parsed = ruleSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const id = newId("apr");

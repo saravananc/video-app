@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { newId } from "@fav/core";
+import { FLAG_KEYS, newId } from "@fav/core";
 import { getDb, users, voices } from "@fav/db";
 import { assetKeys, encryptSecret, getStorageProvider, getTtsProvider, MockTtsProvider } from "@fav/providers";
-import { authErrorResponse, requireSession, requireVideoAccess } from "@/lib/org";
+import { authErrorResponse, requireFeature, requireSession, requireVideoAccess } from "@/lib/org";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +66,7 @@ const cloneSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const session = await requireVideoAccess();
+    await requireFeature(session.orgId, FLAG_KEYS.voiceCloning);
     const parsed = cloneSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 

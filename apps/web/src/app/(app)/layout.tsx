@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getDb, resolveFlags } from "@fav/db";
 import { getSession } from "@/lib/auth";
-import { ensureAutopilotScheduler } from "@/lib/runner";
+import { ensureSchedulers } from "@/lib/runner";
 import { LogoutButton } from "@/components/logout-button";
 
 /** Authenticated app shell: nav with org, balance, and sign-out (FAV-204). */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  ensureAutopilotScheduler();
+  ensureSchedulers();
   const session = await getSession();
   if (!session) redirect("/login");
+  // Nav only shows features enabled for this org (FAV-1703).
+  const flags = await resolveFlags(getDb(), session.orgId);
 
   return (
     <div className="min-h-screen">
@@ -28,12 +31,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/dashboard/social" className="transition-colors hover:text-text">
                 Social
               </Link>
-              <Link href="/dashboard/autopilot" className="transition-colors hover:text-text">
-                Autopilot
-              </Link>
-              <Link href="/dashboard/api-keys" className="transition-colors hover:text-text">
-                API
-              </Link>
+              {flags.autopilot ? (
+                <Link href="/dashboard/autopilot" className="transition-colors hover:text-text">
+                  Autopilot
+                </Link>
+              ) : null}
+              {flags.public_api ? (
+                <Link href="/dashboard/api-keys" className="transition-colors hover:text-text">
+                  API
+                </Link>
+              ) : null}
               <Link href="/billing" className="transition-colors hover:text-text">
                 Billing
               </Link>

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb, videos, organizations, InsufficientCreditsError } from "@fav/db";
-import { estimateVideoCost, videoRequestSchema } from "@fav/core";
+import { estimateVideoCost, FLAG_KEYS, videoRequestSchema } from "@fav/core";
 import { createGenerationJob } from "@fav/workflows";
 import { getRateLimiter } from "@fav/providers";
 import { kickGenerationJob } from "@/lib/runner";
-import { authErrorResponse, requireSession, requireVideoAccess } from "@/lib/org";
+import { authErrorResponse, requireFeature, requireSession, requireVideoAccess } from "@/lib/org";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +58,11 @@ export async function POST(req: NextRequest) {
     const parsed = videoRequestSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
+    }
+
+    // Max tier means text-to-video clips — gated per org (FAV-1703/503).
+    if (parsed.data.tier === "max") {
+      await requireFeature(orgId, FLAG_KEYS.textToVideo);
     }
 
     // Pre-flight balance check for a clear early error (FAV-1205); the workflow's

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { FLAG_KEYS } from "@fav/core";
 import { apiKeys, getDb } from "@fav/db";
-import { authErrorResponse, requireBillingAccess } from "@/lib/org";
+import { authErrorResponse, requireBillingAccess, requireFeature } from "@/lib/org";
 import { API_SCOPES, issueApiKey } from "@/lib/api-key";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const session = await requireBillingAccess();
+    await requireFeature(session.orgId, FLAG_KEYS.publicApi);
     const parsed = createSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const { id, plaintext } = await issueApiKey({

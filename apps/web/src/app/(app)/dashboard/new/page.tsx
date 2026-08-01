@@ -38,6 +38,14 @@ export default function NewVideoPage() {
     { value: "voice_bella", label: "Bella — warm storyteller" },
     { value: "voice_josh", label: "Josh — energetic" }
   ]);
+  const [maxTierEnabled, setMaxTierEnabled] = useState(false);
+
+  useEffect(() => {
+    // Hide the max tier unless it's enabled for this org (FAV-1703).
+    void fetch("/api/flags", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setMaxTierEnabled(Boolean(body?.flags?.text_to_video)));
+  }, []);
 
   useEffect(() => {
     // Full library incl. clones + the user's default (FAV-602 selection persists).
@@ -168,9 +176,9 @@ export default function NewVideoPage() {
             <label className="mb-1.5 block text-sm font-medium">Quality tier</label>
             <PillGroup
               options={[
-                { value: "basic", label: "Basic — fast images" },
-                { value: "premium", label: "Premium — detailed images" },
-                { value: "max", label: "Max — motion clips" }
+                { value: "basic" as const, label: "Basic — fast images" },
+                { value: "premium" as const, label: "Premium — detailed images" },
+                ...(maxTierEnabled ? [{ value: "max" as const, label: "Max — motion clips" }] : [])
               ]}
               value={tier}
               onChange={setTier}

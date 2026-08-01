@@ -17,6 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import { createGenerationJob, runGenerationJob } from "./generation.js";
 import { cleanupIntermediateAssets, purgeVideoAssets } from "./maintenance.js";
+import { enforceDeletionRetention, runMaintenance } from "./retention.js";
 import type { PipelineDeps } from "./deps.js";
 
 const ORG = "org_demo";
@@ -111,5 +112,45 @@ describe("retention & deletion (FAV-1606/1003)", () => {
     for (const scene of sceneRows) {
       expect(await deps.storage.exists(scene.imageAssetKey!)).toBe(true);
     }
+  });
+
+  it("the scheduled maintenance pass performs the cleanup end to end", async () => {
+    await db
+      .update(videos)
+      .set({ completedAt: new Date(Date.now() - 30 * 24 * 3600 * 1000) })
+      .where(eq(videos.id, videoId));
+    const [before] = await db.select().from(videos).where(eq(videos.id, videoId));
+
+    const result = await runMaintenance(db, deps.storage);
+
+    expect(result.intermediatesCleaned).toBe(1);
+    expect(await deps.storage.exists(before!.narrationAssetKey!)).toBe(false);
+    expect(result.ranAt).toBeTruthy();
+  });
+
+  it("retention sweep scrubs long-soft-deleted videos that still hold assets", async () => {
+    const [before] = await db.select().from(videos).where(eq(videos.id, videoId));
+    // A delete that failed partway: marked deleted long ago, assets still present.
+    await db
+      .update(videos)
+      .set({ deletedAt: new Date(Date.now() - 60 * 24 * 3600 * 1000) })
+      .where(eq(videos.id, videoId));
+    expect(await deps.storage.exists(before!.finalAssetKey!)).toBe(true);
+
+    const { scrubbed } = await enforceDeletionRetention(db, deps.storage, 30);
+    expect(scrubbed).toBe(1);
+    expect(await deps.storage.exists(before!.finalAssetKey!)).toBe(false);
+
+    const [after] = await db.select().from(videos).where(eq(videos.id, videoId));
+    expect(after!.finalAssetKey).toBeNull();
+    expect(after!.script).toBeNull();
+    // Row survives for ledger integrity.
+    expect(after!.id).toBe(videoId);
+  });
+
+  it("retention sweep leaves recently deleted videos alone", async () => {
+    await db.update(videos).set({ deletedAt: new Date() }).where(eq(videos.id, videoId));
+    const { scrubbed } = await enforceDeletionRetention(db, deps.storage, 30);
+    expect(scrubbed).toBe(0);
   });
 });

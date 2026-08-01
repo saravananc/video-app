@@ -15,3 +15,4 @@ export {
   purgeVideoAssets
 } from "./maintenance.js";
 export { computeNextRun, runAutopilotRule, sweepDueAutopilotRules } from "./autopilot.js";
+export { runMaintenance, enforceDeletionRetention, RETENTION, type MaintenanceResult } from "./retention.js";

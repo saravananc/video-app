@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { getDb, jobs, videos } from "@fav/db";
-import { overallPercent, pipelineStageSchema } from "@fav/core";
+import { getDb, isFeatureEnabled, jobs, videos } from "@fav/db";
+import { FLAG_KEYS, overallPercent, pipelineStageSchema } from "@fav/core";
 import { getStorageProvider } from "@fav/providers";
 import { authenticateApiKey, hasScope } from "@/lib/api-key";
 
@@ -15,6 +15,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const { id } = await ctx.params;
   const db = getDb();
+  if (!(await isFeatureEnabled(db, FLAG_KEYS.publicApi, auth.orgId))) {
+    return NextResponse.json({ error: "api_disabled" }, { status: 403 });
+  }
   const [video] = await db
     .select()
     .from(videos)

@@ -23,7 +23,14 @@ export default function VoicesPage() {
   const [cloneName, setCloneName] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cloningEnabled, setCloningEnabled] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/flags", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setCloningEnabled(Boolean(body?.flags?.voice_cloning)));
+  }, []);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/voices", { cache: "no-store" });
@@ -179,27 +186,29 @@ export default function VoicesPage() {
         ))}
       </div>
 
-      <Card className="flex flex-col gap-3">
-        <div>
-          <h2 className="font-semibold">Clone your voice</h2>
-          <p className="text-sm text-text-muted">
-            {clones.length > 0
-              ? `You have ${clones.length} clone${clones.length === 1 ? "" : "s"}.`
-              : "Create a voice clone from a short sample — stored encrypted, usable like any library voice."}
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <Input
-            className="max-w-xs"
-            placeholder="Clone name (e.g. My voice)"
-            value={cloneName}
-            onChange={(e) => setCloneName(e.target.value)}
-          />
-          <Button disabled={busy !== null || cloneName.trim().length === 0} onClick={createClone}>
-            {busy === "clone" ? "Cloning…" : "Create clone (demo sample)"}
-          </Button>
-        </div>
-      </Card>
+      {cloningEnabled && (
+        <Card className="flex flex-col gap-3">
+          <div>
+            <h2 className="font-semibold">Clone your voice</h2>
+            <p className="text-sm text-text-muted">
+              {clones.length > 0
+                ? `You have ${clones.length} clone${clones.length === 1 ? "" : "s"}.`
+                : "Create a voice clone from a short sample — stored encrypted, usable like any library voice."}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Input
+              className="max-w-xs"
+              placeholder="Clone name (e.g. My voice)"
+              value={cloneName}
+              onChange={(e) => setCloneName(e.target.value)}
+            />
+            <Button disabled={busy !== null || cloneName.trim().length === 0} onClick={createClone}>
+              {busy === "clone" ? "Cloning…" : "Create clone (demo sample)"}
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

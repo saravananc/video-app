@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { estimateVideoCost, videoRequestSchema } from "@fav/core";
-import { getDb, organizations } from "@fav/db";
+import { estimateVideoCost, FLAG_KEYS, videoRequestSchema } from "@fav/core";
+import { getDb, isFeatureEnabled, organizations } from "@fav/db";
 import { getRateLimiter } from "@fav/providers";
 import { createGenerationJob } from "@fav/workflows";
 import { authenticateApiKey, hasScope } from "@/lib/api-key";
@@ -16,6 +16,11 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: "Invalid or missing API key" }, { status: 401 });
   if (!hasScope(ctx, "videos:write")) {
     return NextResponse.json({ error: "Key lacks videos:write scope" }, { status: 403 });
+  }
+  // Checked per request, not just at key issuance: turning the flag off must
+  // immediately stop existing keys from working (FAV-1703).
+  if (!(await isFeatureEnabled(getDb(), FLAG_KEYS.publicApi, ctx.orgId))) {
+    return NextResponse.json({ error: "api_disabled" }, { status: 403 });
   }
 
   // Per-org API rate limit with retry info (FAV-1503 AC).
@@ -34,6 +39,9 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
+  if (parsed.data.tier === "max" && !(await isFeatureEnabled(db, FLAG_KEYS.textToVideo, ctx.orgId))) {
+    return NextResponse.json({ error: "tier_not_enabled" }, { status: 403 });
+  }
   const estimate = estimateVideoCost(parsed.data);
   const [org] = await db.select().from(organizations).where(eq(organizations.id, ctx.orgId));
   if (!org || org.cachedBalance < estimate.total) {
