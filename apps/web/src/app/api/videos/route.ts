@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb, videos, organizations, InsufficientCreditsError } from "@fav/db";
 import { estimateVideoCost, videoRequestSchema } from "@fav/core";
 import { createGenerationJob } from "@fav/workflows";
@@ -26,7 +26,7 @@ export async function GET() {
         completedAt: videos.completedAt
       })
       .from(videos)
-      .where(eq(videos.orgId, orgId))
+      .where(and(eq(videos.orgId, orgId), isNull(videos.deletedAt)))
       .orderBy(desc(videos.createdAt))
       .limit(100);
     return NextResponse.json({ videos: rows });

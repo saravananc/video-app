@@ -43,6 +43,7 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
   const [data, setData] = useState<VideoDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [rerenderBusy, setRerenderBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -74,6 +75,17 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
     });
     setRerenderBusy(false);
     void load();
+  }
+
+  async function deleteVideo() {
+    if (!confirm("Delete this video? The rendered file, images, and audio are permanently erased.")) return;
+    setDeleteBusy(true);
+    const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
+    setDeleteBusy(false);
+    if (res.ok) {
+      if (timer.current) clearInterval(timer.current);
+      window.location.href = "/dashboard";
+    }
   }
 
   if (notFound) {
@@ -111,7 +123,19 @@ export default function VideoDetailPage({ params }: { params: Promise<{ id: stri
           <h1 className="mt-1 text-2xl font-bold">{video.title}</h1>
           <p className="mt-0.5 text-sm text-text-muted">{video.topic}</p>
         </div>
-        <StatusBadge status={video.status} />
+        <div className="flex items-center gap-3">
+          <StatusBadge status={video.status} />
+          {editable && (
+            <Button
+              variant="ghost"
+              className="px-2.5 py-1 text-xs text-danger"
+              disabled={deleteBusy}
+              onClick={deleteVideo}
+            >
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {generating && (

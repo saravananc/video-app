@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb, videos } from "@fav/db";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
@@ -23,7 +23,7 @@ export default async function DashboardPage() {
       createdAt: videos.createdAt
     })
     .from(videos)
-    .where(eq(videos.orgId, session.orgId))
+    .where(and(eq(videos.orgId, session.orgId), isNull(videos.deletedAt)))
     .orderBy(desc(videos.createdAt))
     .limit(50);
 

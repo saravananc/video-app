@@ -29,6 +29,8 @@ export const renderPropsSchema = z.object({
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   fps: z.number().int().positive().default(30),
-  durationSeconds: z.number().positive()
+  durationSeconds: z.number().positive(),
+  /** AI-provenance watermark badge (FAV-1607). */
+  watermark: z.boolean().default(false)
 });
 export type RenderProps = z.infer<typeof renderPropsSchema>;

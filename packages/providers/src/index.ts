@@ -21,5 +21,7 @@ export * from "./crypto.js";
 export * from "./publishers/types.js";
 export { MockPublisherProvider } from "./publishers/mock.js";
 export { YouTubePublisherProvider } from "./publishers/youtube.js";
+export { TikTokPublisherProvider } from "./publishers/tiktok.js";
+export { InstagramPublisherProvider } from "./publishers/instagram.js";
 export * from "./streaming/mux.js";
 export { synthesizeMusicTrack } from "./audio/music.js";

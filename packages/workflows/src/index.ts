@@ -14,3 +14,4 @@ export {
   cleanupIntermediateAssets,
   purgeVideoAssets
 } from "./maintenance.js";
+export { computeNextRun, runAutopilotRule, sweepDueAutopilotRules } from "./autopilot.js";

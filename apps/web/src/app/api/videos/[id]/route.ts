@@ -1,11 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { getDb, jobs, scenes, videos } from "@fav/db";
 import { overallPercent, STAGE_LABELS, pipelineStageSchema } from "@fav/core";
 import { getStorageProvider } from "@fav/providers";
 import { authErrorResponse, requireSession } from "@/lib/org";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * User-initiated deletion (FAV-1606). Every stored asset is purged and the
+ * user's content (topic, script, captions) is scrubbed, but the row is
+ * soft-deleted rather than dropped: credit_ledger entries reference it and
+ * that ledger is append-only and auditable by design (FAV-303). Deleted
+ * videos are invisible to every read path.
+ */
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { orgId } = await requireSession();
+    const { id } = await ctx.params;
+    const db = getDb();
+    const [video] = await db
+      .select({ id: videos.id, status: videos.status, deletedAt: videos.deletedAt })
+      .from(videos)
+      .where(and(eq(videos.id, id), eq(videos.orgId, orgId)));
+    if (!video || video.deletedAt) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (video.status === "generating" || video.status === "rendering" || video.status === "queued") {
+      return NextResponse.json({ error: "Wait for generation to finish before deleting" }, { status: 409 });
+    }
+
+    const { purgeVideoAssets } = await import("@fav/workflows");
+    const { getStorageProvider } = await import("@fav/providers");
+    await purgeVideoAssets(db, getStorageProvider(), id);
+    await db.delete(scenes).where(eq(scenes.videoId, id));
+    await db
+      .update(videos)
+      .set({
+        deletedAt: new Date(),
+        title: "Deleted video",
+        topic: "",
+        script: null,
+        captionCues: null,
+        finalAssetKey: null,
+        narrationAssetKey: null,
+        thumbnailAssetKey: null,
+        playbackId: null,
+        updatedAt: new Date()
+      })
+      .where(eq(videos.id, id));
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const auth = authErrorResponse(err);
+    if (auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    throw err;
+  }
+}
 
 /** Video detail + live job progress + scenes (FAV-1104 poll target). */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -23,7 +71,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const [video] = await db
     .select()
     .from(videos)
-    .where(and(eq(videos.id, id), eq(videos.orgId, orgId)));
+    .where(and(eq(videos.id, id), eq(videos.orgId, orgId), isNull(videos.deletedAt)));
   if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [job] = await db

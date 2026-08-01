@@ -103,6 +103,8 @@ import type { PaymentsProvider } from "./payments/types.js";
 
 import { MockPublisherProvider } from "./publishers/mock.js";
 import { YouTubePublisherProvider } from "./publishers/youtube.js";
+import { TikTokPublisherProvider } from "./publishers/tiktok.js";
+import { InstagramPublisherProvider } from "./publishers/instagram.js";
 import type { Platform, PublisherProvider } from "./publishers/types.js";
 
 export function getPublisherProvider(platform: Platform): PublisherProvider {
@@ -110,8 +112,13 @@ export function getPublisherProvider(platform: Platform): PublisherProvider {
   if (platform === "youtube" && process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET) {
     return new YouTubePublisherProvider(process.env.YOUTUBE_CLIENT_ID, process.env.YOUTUBE_CLIENT_SECRET);
   }
-  // TikTok (FAV-1303) and Instagram (FAV-1304) real adapters land in Phase E;
-  // the mock exercises the same connect -> publish -> track loop for all three.
+  if (platform === "tiktok" && process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET) {
+    return new TikTokPublisherProvider(process.env.TIKTOK_CLIENT_KEY, process.env.TIKTOK_CLIENT_SECRET);
+  }
+  if (platform === "instagram" && process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET) {
+    return new InstagramPublisherProvider(process.env.INSTAGRAM_APP_ID, process.env.INSTAGRAM_APP_SECRET);
+  }
+  // Keyless dev: the mock exercises the same connect -> publish -> track loop.
   return new MockPublisherProvider(platform, baseUrl);
 }
 

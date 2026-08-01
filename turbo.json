@@ -13,7 +13,10 @@
       "dependsOn": ["^build"]
     },
     "typecheck": {
-      "dependsOn": ["^build"]
+      // Depends on this package's own build too: the web app typechecks
+      // .next/types/**, which `next build` generates. Without this, a parallel
+      // build/typecheck run reads those files mid-write and fails spuriously.
+      "dependsOn": ["^build", "build"]
     },
     "test": {
       "dependsOn": ["^build"]

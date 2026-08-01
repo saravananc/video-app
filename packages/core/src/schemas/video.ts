@@ -60,7 +60,9 @@ export const videoRequestSchema = z.object({
   tone: toneSchema.default("informative"),
   voiceId: z.string().optional(),
   language: z.string().default("en"),
-  musicTrackId: z.string().optional()
+  musicTrackId: z.string().optional(),
+  /** Optional AI-provenance watermark burned into the corner (FAV-1607). */
+  watermark: z.boolean().default(false)
 });
 export type VideoRequest = z.infer<typeof videoRequestSchema>;
 

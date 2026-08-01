@@ -53,7 +53,37 @@ export async function getSession(): Promise<Session | null> {
   if (!token) return null;
   const userId = verifySessionToken(token);
   if (!userId) return null;
-  return sessionForUser(userId);
+  const session = await sessionForUser(userId);
+  if (!session) return null;
+
+  // Audited support impersonation (FAV-1704): staff with an active, unexpired
+  // impersonation session act inside the target org (as admin, not owner).
+  const impersonationId = jar.get("fav_impersonate")?.value;
+  if (impersonationId && session.user.isStaff) {
+    const db = getDb();
+    const { impersonationSessions, organizations: orgsTable } = await import("@fav/db");
+    const [imp] = await db
+      .select()
+      .from(impersonationSessions)
+      .where(eq(impersonationSessions.id, impersonationId));
+    if (
+      imp &&
+      imp.staffUserId === userId &&
+      !imp.endedAt &&
+      imp.expiresAt.getTime() > Date.now()
+    ) {
+      const [org] = await db.select().from(orgsTable).where(eq(orgsTable.id, imp.targetOrgId));
+      if (org) {
+        return {
+          ...session,
+          orgId: org.id,
+          role: "admin",
+          org: { id: org.id, name: `${org.name} (impersonating)`, plan: org.plan, cachedBalance: org.cachedBalance }
+        };
+      }
+    }
+  }
+  return session;
 }
 
 export async function sessionForUser(userId: string): Promise<Session | null> {

@@ -400,7 +400,8 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
         width,
         height,
         fps: 30,
-        durationSeconds: narrationDuration
+        durationSeconds: narrationDuration,
+        watermark: request.watermark
       };
 
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "fav-render-"));

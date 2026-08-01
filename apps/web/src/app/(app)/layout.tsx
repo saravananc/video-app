@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
+import { ensureAutopilotScheduler } from "@/lib/runner";
 import { LogoutButton } from "@/components/logout-button";
 
 /** Authenticated app shell: nav with org, balance, and sign-out (FAV-204). */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  ensureAutopilotScheduler();
   const session = await getSession();
   if (!session) redirect("/login");
 
@@ -25,6 +27,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </Link>
               <Link href="/dashboard/social" className="transition-colors hover:text-text">
                 Social
+              </Link>
+              <Link href="/dashboard/autopilot" className="transition-colors hover:text-text">
+                Autopilot
+              </Link>
+              <Link href="/dashboard/api-keys" className="transition-colors hover:text-text">
+                API
               </Link>
               <Link href="/billing" className="transition-colors hover:text-text">
                 Billing

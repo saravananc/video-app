@@ -161,6 +161,22 @@ export const FavComposition: React.FC<RenderProps> = (props) => {
       <Audio src={props.audioUrl} />
       {props.musicUrl ? <DuckedMusic musicUrl={props.musicUrl} cues={props.cues} /> : null}
       <Captions cues={props.cues} style={props.captionStyle} />
+      {props.watermark ? (
+        <div
+          style={{
+            position: "absolute",
+            top: "2.5%",
+            right: "3%",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: "1.1em",
+            fontWeight: 700,
+            color: "rgba(255,255,255,0.55)",
+            textShadow: "0 1px 6px rgba(0,0,0,0.6)"
+          }}
+        >
+          AI · FAV
+        </div>
+      ) : null}
     </AbsoluteFill>
   );
 };
