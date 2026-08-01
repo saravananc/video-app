@@ -1,0 +1,126 @@
+import React from "react";
+import {
+  AbsoluteFill,
+  Audio,
+  Img,
+  OffthreadVideo,
+  Sequence,
+  interpolate,
+  useCurrentFrame,
+  useVideoConfig
+} from "remotion";
+import { Captions } from "./Captions";
+import type { RenderProps, RenderScene, SceneMotion } from "./props";
+
+const TRANSITION_SEC = 0.5;
+
+/** Ken Burns pan/zoom per scene (FAV-802), direction alternating by index. */
+function motionFor(scene: RenderScene, index: number): SceneMotion {
+  if (scene.motion) return scene.motion;
+  return (["zoom-in", "pan-right", "zoom-out", "pan-left"] as const)[index % 4]!;
+}
+
+const SceneLayer: React.FC<{
+  scene: RenderScene;
+  index: number;
+  transition: RenderProps["transition"];
+}> = ({ scene, index, transition }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const durationFrames = Math.max(1, Math.round((scene.endSec - scene.startSec) * fps));
+  const progress = Math.min(1, frame / durationFrames);
+
+  const motion = motionFor(scene, index);
+  let scale = 1;
+  let translateX = 0;
+  const translateY = 0;
+  // Subtle motion, respecting aspect: max 8% zoom / 4% pan keeps edges covered (FAV-802 AC).
+  switch (motion) {
+    case "zoom-in":
+      scale = 1.02 + progress * 0.08;
+      break;
+    case "zoom-out":
+      scale = 1.1 - progress * 0.08;
+      break;
+    case "pan-left":
+      scale = 1.08;
+      translateX = progress * -4;
+      break;
+    case "pan-right":
+      scale = 1.08;
+      translateX = progress * 4;
+      break;
+  }
+
+  let opacity = 1;
+  if (transition === "fade") {
+    const fadeFrames = TRANSITION_SEC * fps;
+    opacity = interpolate(
+      frame,
+      [0, fadeFrames, durationFrames - fadeFrames, durationFrames],
+      [index === 0 ? 1 : 0, 1, 1, 0],
+      { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    );
+  }
+
+  const media = scene.clipUrl ? (
+    <OffthreadVideo src={scene.clipUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted />
+  ) : (
+    <Img
+      src={scene.imageUrl}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        transform: `scale(${scale}) translate(${translateX}%, ${translateY}%)`
+      }}
+    />
+  );
+
+  return (
+    <AbsoluteFill style={{ opacity, backgroundColor: "#000" }}>
+      {media}
+      {scene.onScreenText ? (
+        <div
+          style={{
+            position: "absolute",
+            top: "8%",
+            left: "6%",
+            right: "6%",
+            textAlign: "center",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontWeight: 900,
+            fontSize: "3em",
+            color: "#fff",
+            textShadow: "0 2px 16px rgba(0,0,0,0.9)"
+          }}
+        >
+          {scene.onScreenText}
+        </div>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+/** The parameterized composition — props fully drive output (FAV-801). */
+export const FavComposition: React.FC<RenderProps> = (props) => {
+  const { fps } = useVideoConfig();
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      {props.scenes.map((scene, i) => {
+        const from = Math.round(scene.startSec * fps);
+        // Overlap by the transition so fades cross-blend (FAV-803).
+        const overlap = props.transition === "none" ? 0 : Math.round(TRANSITION_SEC * fps);
+        const duration = Math.max(1, Math.round((scene.endSec - scene.startSec) * fps) + overlap);
+        return (
+          <Sequence key={i} from={from} durationInFrames={duration}>
+            <SceneLayer scene={scene} index={i} transition={props.transition} />
+          </Sequence>
+        );
+      })}
+      <Audio src={props.audioUrl} />
+      {props.musicUrl ? <Audio src={props.musicUrl} volume={0.18} loop /> : null}
+      <Captions cues={props.cues} style={props.captionStyle} />
+    </AbsoluteFill>
+  );
+};

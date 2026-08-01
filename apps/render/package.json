@@ -1,0 +1,37 @@
+{
+  "name": "@fav/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@fav/core": "workspace:*",
+    "@remotion/bundler": "^4.0.240",
+    "@remotion/renderer": "^4.0.240",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.240",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@fav/config": "workspace:*",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.0.0",
+    "eslint": "^9.20.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

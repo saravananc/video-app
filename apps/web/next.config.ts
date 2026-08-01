@@ -17,8 +17,24 @@ export default async function config(phase: string): Promise<NextConfig> {
   }
 
   return {
-    // Native/wasm server deps must never be bundled — they're direct deps of
-    // this app so Node resolves them at runtime.
-    serverExternalPackages: ["@electric-sql/pglite", "pg"]
+    // Native/wasm deps resolvable from this app are externalized here.
+    serverExternalPackages: ["@electric-sql/pglite", "pg"],
+    webpack: (webpackConfig, { isServer }) => {
+      if (isServer) {
+        // Workspace packages must stay unbundled on the server: the workflow
+        // loads the Remotion renderer (native bindings, import.meta.url file
+        // resolution) and @fav/db locates migrations on disk. Next's
+        // serverExternalPackages can't externalize symlinked workspace
+        // packages, so mark them external for webpack directly — Node 22
+        // require(esm) loads their ESM dists natively.
+        webpackConfig.externals.push(
+          "@fav/db",
+          "@fav/providers",
+          "@fav/workflows",
+          "@fav/render"
+        );
+      }
+      return webpackConfig;
+    }
   };
 }
