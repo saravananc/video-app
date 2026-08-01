@@ -1,0 +1,312 @@
+Issue Type,Issue Key,Epic Name,Epic Link,Summary,Description,Acceptance Criteria,Priority,Story Points,Labels,Sprint,Dependencies
+Epic,FAV-E1,Foundation & Infrastructure,,Foundation & Infrastructure,"Stand up the repo, environments, core cloud resources and CI so every other epic has ground to build on.",,High,,epic,,
+Task,FAV-101,,Foundation & Infrastructure,Set up TypeScript monorepo,"Create a Turborepo monorepo with shared tsconfig, eslint, prettier, and packages for web, workers, and shared types.","- Monorepo builds with a single command
+- Shared config consumed by all packages
+- Type-checking passes repo-wide",Highest,3,infra setup,Phase 1 - MVP,
+Task,FAV-102,,Foundation & Infrastructure,CI/CD pipeline,"GitHub Actions running lint, typecheck, unit tests, and deploy to staging on merge to main.","- PRs blocked on failing lint/type/test
+- Auto-deploy to staging on merge
+- Deploy status reported to PR",Highest,5,infra ci,Phase 1 - MVP,FAV-101
+Task,FAV-103,,Foundation & Infrastructure,Environment & secrets management,Define dev/staging/prod environments with a secrets store (e.g. Doppler/1Password/Vercel envs).,"- Three isolated environments
+- No secrets in source control
+- Local .env.example documented",Highest,3,infra security,Phase 1 - MVP,FAV-101
+Task,FAV-104,,Foundation & Infrastructure,Provision Postgres & Redis,"Provision managed Postgres (Neon) and Redis for queues, rate limiting, and caching.","- Postgres reachable from app + workers
+- Redis reachable
+- Connection pooling configured",Highest,2,infra data,Phase 1 - MVP,FAV-103
+Task,FAV-105,,Foundation & Infrastructure,Provision R2 storage + lifecycle,Create Cloudflare R2 buckets for raw assets and final renders with lifecycle rules to expire intermediates.,"- Buckets created with least-priv keys
+- Lifecycle expiry on intermediate assets
+- Signed-URL access verified",High,2,infra storage,Phase 1 - MVP,FAV-103
+Task,FAV-106,,Foundation & Infrastructure,Base web app scaffold,"Next.js App Router app with Tailwind and shadcn/ui, base layout, and design tokens.","- App boots locally and on staging
+- Design system components available
+- Dark/light theming baseline",Highest,3,frontend setup,Phase 1 - MVP,FAV-101
+Task,FAV-107,,Foundation & Infrastructure,Error tracking & logging baseline,Wire Sentry and structured logging across web and workers.,"- Uncaught errors reported to Sentry
+- Structured JSON logs with request/job IDs
+- Source maps uploaded",High,2,infra observability,Phase 1 - MVP,FAV-106
+Epic,FAV-E2,Authentication & Multi-tenancy,,Authentication & Multi-tenancy,"User identity, organizations, roles, and protected access — the tenancy boundary all data hangs off.",,High,,epic,,
+Story,FAV-201,,Authentication & Multi-tenancy,Integrate Clerk auth,As a user I can sign up and log in with email and social providers so I can access the app.,"- Email + at least one social login
+- Session persisted across reloads
+- Sign-out clears session",Highest,3,auth,Phase 1 - MVP,FAV-106
+Story,FAV-202,,Authentication & Multi-tenancy,Organizations & memberships,"As a user I belong to an organization so my data, billing, and teammates are scoped to it.","- Org auto-created on first signup
+- All tenant data keyed by org_id
+- User can belong to multiple orgs",Highest,5,auth multitenancy,Phase 1 - MVP,FAV-201 FAV-302
+Story,FAV-203,,Authentication & Multi-tenancy,Roles & permissions,As an org owner I can assign owner/admin/member roles so access is controlled.,"- Three roles enforced server-side
+- Billing limited to owner/admin
+- Role checks unit-tested",High,3,auth,Phase 1 - MVP,FAV-202
+Task,FAV-204,,Authentication & Multi-tenancy,Protected routes & middleware,Session + org middleware guarding all app and API routes.,"- Unauthed requests redirected/401
+- Org context injected per request
+- API keys handled separately",Highest,2,auth security,Phase 1 - MVP,FAV-201
+Story,FAV-205,,Authentication & Multi-tenancy,Teammate invites,As an admin I can invite teammates by email so we can collaborate in one org.,"- Email invite with expiring link
+- Invitee joins existing org
+- Pending/accepted states tracked",Medium,3,auth,Phase 3 - Scale,FAV-203
+Epic,FAV-E3,Data Layer & Schema,,Data Layer & Schema,"The relational schema, migrations, and the append-only credit ledger that is the billing source of truth.",,High,,epic,,
+Task,FAV-301,,Data Layer & Schema,Drizzle ORM & migrations,Set up Drizzle with a repeatable migration workflow and typed query layer.,"- Migrations run in CI + all envs
+- Rollback path documented
+- Typed queries end-to-end",Highest,3,data,Phase 1 - MVP,FAV-104
+Task,FAV-302,,Data Layer & Schema,Core schema,"Model users, organizations, memberships, videos, scenes, and jobs.","- All core tables + relations migrated
+- Indexes on hot lookups
+- ER diagram in repo",Highest,5,data,Phase 1 - MVP,FAV-301
+Story,FAV-303,,Data Layer & Schema,Append-only credit ledger,As the platform I record every credit change as an immutable ledger row so balances are auditable.,"- No mutable balance column
+- Balance derived + cached
+- Compensating entries for refunds",Highest,5,data billing,Phase 1 - MVP,FAV-302
+Task,FAV-304,,Data Layer & Schema,Ancillary tables,"Model voices, social_accounts, autopilot_rules, publish_jobs.","- Tables migrated with encryption flags on token cols
+- FKs + indexes set
+- Documented in schema doc",High,3,data,Phase 2 - Product,FAV-302
+Task,FAV-305,,Data Layer & Schema,Seed & fixtures,Deterministic seed data and fixtures for local dev and tests.,"- One command seeds a working org
+- Fixtures used by integration tests
+- Idempotent re-seeding",Medium,2,data dx,Phase 1 - MVP,FAV-302
+Epic,FAV-E4,Pipeline: Script Generation,,Pipeline: Script Generation,"Turn a topic into a validated, structured, scene-by-scene script — the first stage of the pipeline.",,High,,epic,,
+Task,FAV-401,,Pipeline: Script Generation,LLM provider client,Provider-agnostic LLM client abstraction (Claude/GPT/Gemini) with retries.,"- Swap providers via config
+- Retries with jitter
+- Token usage logged",Highest,3,pipeline llm,Phase 0 - Spike,
+Story,FAV-402,,Pipeline: Script Generation,Structured scene-script generation,As a creator I enter a topic and get a scene-by-scene script (narration + visual prompt + on-screen text) as validated JSON.,"- Output validated against JSON schema
+- Malformed output rejected + retried
+- Scene count maps to duration",Highest,5,pipeline llm,Phase 0 - Spike,FAV-401
+Story,FAV-403,,Pipeline: Script Generation,Duration/tone/style controls,"As a creator I set target length, tone, and style so scripts match my niche.","- Controls affect prompt + scene count
+- ~150 wpm pacing model
+- Presets available",High,3,pipeline,Phase 2 - Product,FAV-402
+Story,FAV-404,,Pipeline: Script Generation,Script edit & regenerate,As a creator I can edit narration or regenerate the whole script before rendering.,"- Per-scene inline edit
+- Regenerate whole or single scene
+- Edits persist to DB",High,3,pipeline frontend,Phase 2 - Product,FAV-402 FAV-1103
+Task,FAV-405,,Pipeline: Script Generation,Input prompt moderation,Moderate user topic/prompt input before generation to protect provider accounts.,"- Prohibited prompts blocked pre-generation
+- Moderation decisions logged
+- Clear user-facing rejection",High,2,pipeline safety,Phase 2 - Product,FAV-401
+Epic,FAV-E5,Pipeline: Visual Generation,,Pipeline: Visual Generation,"Per-scene image and text-to-video generation via a resilient model gateway, with quality tiers and re-roll.",,High,,epic,,
+Task,FAV-501,,Pipeline: Visual Generation,Model gateway with fallback,Abstraction over fal.ai/Replicate for image + video models with a fallback provider and circuit breaker.,"- Primary+fallback per model type
+- Circuit breaker on repeated failure
+- Cost per call recorded",Highest,5,pipeline visuals,Phase 0 - Spike,FAV-401
+Story,FAV-502,,Pipeline: Visual Generation,Image generation per scene,As the pipeline I generate one image per scene (FLUX tiers) from its visual prompt.,"- Basic + premium image tiers
+- Asset stored to R2 keyed by scene
+- Failures retryable per scene",Highest,5,pipeline visuals,Phase 0 - Spike,FAV-501 FAV-105
+Story,FAV-503,,Pipeline: Visual Generation,Text-to-video generation,As the pipeline I generate short video clips per scene (Kling/Runway/Luma) for the max tier.,"- Per-second metering wired to credits
+- Configurable clip length
+- Graceful downgrade if unavailable",Medium,8,pipeline visuals,Phase 2 - Product,FAV-501
+Task,FAV-504,,Pipeline: Visual Generation,Parallel scene generation,Generate scene assets in parallel with a concurrency cap and backpressure.,"- Configurable concurrency limit
+- Partial-failure handling
+- Progress emitted per scene",High,3,pipeline,Phase 1 - MVP,FAV-502 FAV-905
+Story,FAV-505,,Pipeline: Visual Generation,Scene re-roll,As a creator I can regenerate a single scene's visual without touching the rest.,"- Single asset regenerated + replaced
+- Correct incremental credit charge
+- UI reflects new asset",High,3,pipeline frontend,Phase 2 - Product,FAV-502 FAV-1103
+Story,FAV-506,,Pipeline: Visual Generation,Visual style presets,"As a creator I pick a visual style (cinematic, anime, 3D, etc.) applied across scenes.","- Style injected into every visual prompt
+- Consistent look across scenes
+- Preview thumbnails",Medium,3,pipeline,Phase 2 - Product,FAV-502
+Epic,FAV-E6,Pipeline: Voiceover,,Pipeline: Voiceover,"Narration synthesis via ElevenLabs, a browsable voice library, and voice cloning.",,High,,epic,,
+Task,FAV-601,,Pipeline: Voiceover,ElevenLabs integration,Client for ElevenLabs TTS with model/voice selection and retries.,"- Synthesize narration to audio
+- Model + voice selectable
+- Errors retryable",Highest,3,pipeline voice,Phase 0 - Spike,
+Story,FAV-602,,Pipeline: Voiceover,Voice library UI,As a creator I browse and select from 1000+ voices so my video sounds right.,"- Searchable/filterable voice list
+- In-browser preview sample
+- Selection persists to video",High,3,pipeline voice frontend,Phase 2 - Product,FAV-601 FAV-1102
+Story,FAV-603,,Pipeline: Voiceover,Voice cloning,As a creator I clone my voice from a short sample so videos use my own voice.,"- Upload/record sample
+- Clone stored per org (encrypted)
+- Clone usable like any voice",Medium,5,pipeline voice,Phase 2 - Product,FAV-601 FAV-304
+Story,FAV-604,,Pipeline: Voiceover,Narration synthesis + timing,As the pipeline I synthesize the full narration and capture exact audio duration.,"- Audio stored to R2
+- Precise duration recorded
+- Handles long scripts via chunking",Highest,3,pipeline voice,Phase 0 - Spike,FAV-601
+Story,FAV-605,,Pipeline: Voiceover,Multi-language handling,As a creator I generate narration in multiple languages where the voice model supports it.,"- Language selectable per video
+- Model chosen by language support
+- Accurate capability messaging",Medium,3,pipeline voice,Phase 3 - Scale,FAV-604
+Epic,FAV-E7,Pipeline: Captions,,Pipeline: Captions,"Transcribe the real audio for word-level timing, and offer animated caption styles.",,High,,epic,,
+Task,FAV-701,,Pipeline: Captions,Whisper transcription,Transcribe the synthesized audio to get word-level timestamps (never trust script timing).,"- Word-level timestamps produced
+- Runs on final audio
+- Failure retryable",Highest,3,pipeline captions,Phase 0 - Spike,FAV-604
+Task,FAV-702,,Pipeline: Captions,Caption timing model,Convert word timestamps into caption cues consumable by the renderer.,"- Cues grouped into readable chunks
+- Timing aligns with audio
+- Serialized for render props",High,2,pipeline captions,Phase 0 - Spike,FAV-701
+Story,FAV-703,,Pipeline: Captions,Caption style presets,"As a creator I pick a caption style (bold, karaoke, impact, etc.) so captions match the trend.","- Multiple named styles
+- Applied at render time
+- Preview in editor",Medium,3,pipeline captions frontend,Phase 2 - Product,FAV-702 FAV-804
+Epic,FAV-E8,Render & Assembly,,Render & Assembly,"Composite scenes, motion, transitions, music, and captions into the final MP4 on autoscaling workers.",,High,,epic,,
+Task,FAV-801,,Render & Assembly,Remotion project & compositions,"Set up Remotion with a parameterized composition taking scenes, audio, and caption cues as props.","- Deterministic local render
+- Props fully drive output
+- 1080p output verified",Highest,5,render,Phase 0 - Spike,
+Story,FAV-802,,Render & Assembly,Scene rendering + Ken Burns,As the pipeline I render each scene image with subtle pan/zoom motion.,"- Configurable motion per scene
+- Motion respects aspect ratio
+- No visible artifacts",High,3,render,Phase 0 - Spike,FAV-801
+Story,FAV-803,,Render & Assembly,Scene transitions,As a creator my scenes blend with transitions so the video feels seamless.,"- Multiple transition types
+- Transition timing configurable
+- Works with both images and clips",Medium,3,render,Phase 2 - Product,FAV-801
+Story,FAV-804,,Render & Assembly,Burned-in animated captions,As the pipeline I burn word-synced animated captions into the video.,"- Captions synced to word timestamps
+- Legible over any background
+- Style-driven appearance",Highest,5,render captions,Phase 0 - Spike,FAV-702 FAV-801
+Story,FAV-805,,Render & Assembly,Background music mixing,As a creator I add royalty-free background music ducked under narration.,"- Music library selectable
+- Ducking under voice
+- Loudness normalized",Medium,3,render,Phase 2 - Product,FAV-801
+Story,FAV-806,,Render & Assembly,Aspect ratio & resolution,As a creator I export vertical/horizontal at 1080p or 4K.,"- Vertical + horizontal supported
+- 1080p + 4K tiers
+- Resolution metered to credits",High,3,render,Phase 1 - MVP,FAV-801
+Task,FAV-807,,Render & Assembly,Render worker deploy + autoscale,Deploy render workers (containers or Remotion Lambda) as an isolated autoscaling pool.,"- Isolated from API/model workers
+- Autoscales on queue depth
+- Concurrency capped per worker",Highest,8,render infra,Phase 1 - MVP,FAV-801 FAV-902
+Task,FAV-808,,Render & Assembly,Render failure handling,"Timeouts, streamed logs, and clean failure semantics for renders.","- Hard timeout per render
+- Logs captured to observability
+- Terminal failure triggers refund",High,3,render reliability,Phase 1 - MVP,FAV-807 FAV-904
+Epic,FAV-E9,Job Orchestration,,Job Orchestration,"The durable workflow engine that chains the whole pipeline with idempotency, retries, and credit safety.",,High,,epic,,
+Task,FAV-901,,Job Orchestration,Workflow engine setup,Set up Inngest with the scaffolding for durable multi-step workflows.,"- Workflows deploy + observable
+- Local dev runner working
+- Step results persisted",Highest,5,orchestration,Phase 1 - MVP,FAV-104
+Story,FAV-902,,Job Orchestration,End-to-end generation workflow,As the platform I run one durable workflow that executes script->visuals->voice->captions->render->store.,"- All stages chained as steps
+- Resumes mid-workflow on retry
+- Emits progress at each step",Highest,8,orchestration,Phase 1 - MVP,FAV-901 FAV-402 FAV-502 FAV-604 FAV-701 FAV-801
+Task,FAV-903,,Job Orchestration,Idempotency & retries,Make every step idempotent (keyed on video+step) with retry-with-jitter.,"- Retried step overwrites, never duplicates
+- No double asset generation
+- Retry policy tuned per provider",Highest,5,orchestration reliability,Phase 1 - MVP,FAV-902
+Story,FAV-904,,Job Orchestration,Credit reserve / finalize / refund,"As the platform I reserve credits at start, finalize on success, and refund on terminal failure.","- Pending reservation before work
+- Charge finalized only on success
+- Auto-refund on failure",Highest,5,orchestration billing,Phase 1 - MVP,FAV-303 FAV-902
+Task,FAV-905,,Job Orchestration,Progress tracking,Persist granular progress to the job record for the UI.,"- Stage-level progress written
+- Percent/label available to UI
+- Terminal states recorded",High,3,orchestration,Phase 1 - MVP,FAV-902
+Task,FAV-906,,Job Orchestration,Circuit breakers & fallbacks,Wire provider circuit breakers and fallbacks into the workflow.,"- Breaker opens on repeated failure
+- Fallback provider engaged
+- Health surfaced to ops",High,3,orchestration reliability,Phase 2 - Product,FAV-501 FAV-903
+Task,FAV-907,,Job Orchestration,Temporal migration spike,Evaluate migrating from Inngest to Temporal for higher workflow volume.,"- POC of core workflow on Temporal
+- Cost/perf comparison documented
+- Go/no-go recommendation",Low,5,orchestration scale,Phase 3 - Scale,FAV-902
+Epic,FAV-E10,Storage & Delivery,,Storage & Delivery,Move assets in and out of R2 and serve finished video via a streaming host.,,High,,epic,,
+Task,FAV-1001,,Storage & Delivery,R2 asset helpers + signed URLs,Upload/download helpers and short-lived signed URLs for assets.,"- Typed put/get helpers
+- Signed URLs expire
+- Keying convention enforced",Highest,3,storage,Phase 1 - MVP,FAV-105
+Story,FAV-1002,,Storage & Delivery,Mux integration,As a creator I watch my finished video with adaptive streaming and thumbnails.,"- Final MP4 ingested to Mux
+- Adaptive playback + thumbnail
+- Playback ID stored on video",High,3,storage delivery,Phase 2 - Product,FAV-1001
+Task,FAV-1003,,Storage & Delivery,Asset lifecycle cleanup,Expire intermediate scene assets after a video completes.,"- Intermediates expired post-render
+- Final + re-roll inputs retained
+- Cleanup job scheduled",Medium,2,storage,Phase 2 - Product,FAV-1001
+Story,FAV-1004,,Storage & Delivery,Download final MP4,As a creator I download the raw MP4 of my finished video.,"- Signed download URL
+- Correct filename/metadata
+- Access scoped to owner org",High,2,storage frontend,Phase 1 - MVP,FAV-1001
+Epic,FAV-E11,Editor UI / Web App,,Editor UI / Web App,"The creator-facing surface: dashboard, generation wizard, scene editor, live progress, and playback.",,High,,epic,,
+Story,FAV-1101,,Editor UI / Web App,Dashboard / video list,As a creator I see all my videos and their statuses in one place.,"- List with status + thumbnail
+- Filter/sort
+- Pagination",Highest,3,frontend,Phase 1 - MVP,FAV-302 FAV-106
+Story,FAV-1102,,Editor UI / Web App,New video wizard,"As a creator I create a video by choosing topic, tier, aspect, voice, and style.","- Guided multi-step form
+- Credit cost estimate shown
+- Submits + enqueues job",Highest,5,frontend,Phase 1 - MVP,FAV-902 FAV-1205
+Story,FAV-1103,,Editor UI / Web App,Scene editor,"As a creator I review and tweak each scene (narration, prompt, re-roll) before rendering.","- Per-scene edit + re-roll
+- Changes persist
+- Reflects generation state",High,5,frontend,Phase 2 - Product,FAV-404 FAV-505
+Story,FAV-1104,,Editor UI / Web App,Real-time progress UI,As a creator I watch a real progress bar as my video generates.,"- Live stage-level progress
+- Poll or subscribe to job
+- Error states surfaced clearly",Highest,3,frontend,Phase 1 - MVP,FAV-905
+Story,FAV-1105,,Editor UI / Web App,Video player + download,As a creator I play the finished video in-app and download it.,"- Mux player embedded
+- Download button
+- Share/copy link",High,3,frontend,Phase 2 - Product,FAV-1002 FAV-1004
+Story,FAV-1106,,Editor UI / Web App,Voice management UI,"As a creator I manage voices (browse library, manage clones).","- Library browse + preview
+- Manage clones
+- Set default voice",Medium,3,frontend,Phase 2 - Product,FAV-602 FAV-603
+Task,FAV-1107,,Editor UI / Web App,Empty/loading/error UX,"Consistent empty states, skeletons, and error handling across the app.","- Skeletons on load
+- Friendly empty states
+- Recoverable error UI",Medium,2,frontend ux,Phase 1 - MVP,FAV-1101
+Epic,FAV-E12,Credits & Billing,,Credits & Billing,"Stripe subscriptions, non-expiring top-ups, monthly resets, and pre-flight balance enforcement.",,High,,epic,,
+Task,FAV-1201,,Credits & Billing,Stripe products & checkout,Set up subscription tiers + top-up products and Stripe Checkout.,"- Tier products created
+- Checkout flow working
+- Customer linked to org",Highest,5,billing,Phase 1 - MVP,FAV-202
+Story,FAV-1202,,Credits & Billing,Subscription webhooks -> ledger,As the platform I credit accounts from Stripe webhooks reliably.,"- Webhook signature verified
+- Idempotent event handling
+- Ledger entry per grant",Highest,5,billing,Phase 1 - MVP,FAV-1201 FAV-303
+Story,FAV-1203,,Credits & Billing,Credit top-ups,As a creator I buy extra non-expiring credits.,"- One-time purchase flow
+- Credits never expire
+- Ledger reflects purchase",Medium,3,billing,Phase 2 - Product,FAV-1202
+Task,FAV-1204,,Credits & Billing,Monthly credit reset,Reset subscription credit allotment on renewal via ledger entry.,"- Reset on renewal event
+- Top-up credits preserved
+- Reset audited in ledger",High,3,billing,Phase 2 - Product,FAV-1202
+Story,FAV-1205,,Credits & Billing,Pre-generation balance enforcement,As the platform I block jobs a user can't afford before enqueuing.,"- Balance checked before enqueue
+- Clear insufficient-credit UX
+- Race-safe check",Highest,3,billing,Phase 1 - MVP,FAV-303 FAV-902
+Story,FAV-1206,,Credits & Billing,Billing dashboard,"As an owner I manage my plan, see usage, and view invoices.","- Plan upgrade/downgrade/cancel
+- Usage + balance shown
+- Invoice history",High,5,billing frontend,Phase 2 - Product,FAV-1202
+Task,FAV-1207,,Credits & Billing,Cost table / pricing config,Central config mapping generation actions to credit costs.,"- Per-action credit costs configurable
+- Used by estimator + charging
+- Margin over provider cost verified",High,3,billing,Phase 1 - MVP,FAV-303
+Story,FAV-1208,,Credits & Billing,Free tier + starter credits,As a new user I get starter credits with no card so I can try the product.,"- Starter credits on signup
+- No card required
+- Starter credits non-expiring",High,2,billing growth,Phase 1 - MVP,FAV-303
+Epic,FAV-E13,Publishing Integrations,,Publishing Integrations,"OAuth and upload flows for YouTube, TikTok, and Instagram, with token refresh and publish tracking.",,High,,epic,,
+Story,FAV-1301,,Publishing Integrations,YouTube OAuth + token storage,As a creator I connect my YouTube account so videos can be published there.,"- OAuth consent flow
+- Refresh token stored encrypted
+- Disconnect flow",High,3,publishing youtube,Phase 2 - Product,FAV-304
+Story,FAV-1302,,Publishing Integrations,YouTube upload + metadata,As a creator I publish a finished video to YouTube with title/description/tags/visibility.,"- Resumable upload of final MP4
+- Metadata + visibility set
+- External video ID recorded",High,5,publishing youtube,Phase 2 - Product,FAV-1301 FAV-1004
+Story,FAV-1303,,Publishing Integrations,TikTok publishing,As a creator I publish to TikTok via the Content Posting API.,"- OAuth + app-review prep
+- Upload respects content rules
+- Post ID recorded",Medium,8,publishing tiktok,Phase 3 - Scale,FAV-304
+Story,FAV-1304,,Publishing Integrations,Instagram Reels publishing,As a creator I publish Reels via the Graph API (container->publish).,"- Business/Creator account handling
+- Two-step publish
+- Post ID recorded",Medium,5,publishing instagram,Phase 3 - Scale,FAV-304
+Task,FAV-1305,,Publishing Integrations,Token refresh & expiry,Proactively refresh platform OAuth tokens before expiry.,"- Refresh before expiry
+- Re-auth prompt on failure
+- Refresh errors alerted",High,3,publishing reliability,Phase 2 - Product,FAV-1301
+Task,FAV-1306,,Publishing Integrations,Publish job tracking + retry,Track publish jobs with status and retry on transient failure.,"- Publish jobs persisted
+- Retry on transient errors
+- Status visible in UI",Medium,3,publishing,Phase 2 - Product,FAV-1302
+Epic,FAV-E14,Autopilot,,Autopilot,"Scheduled, hands-off generation and publishing per niche and cadence, with originality safeguards.",,High,,epic,,
+Story,FAV-1401,,Autopilot,Autopilot rule builder,"As a creator I set a niche, cadence, and platform so videos post automatically.","- Niche + cadence + platform config
+- Next-run scheduling
+- Enable/disable per rule",Medium,5,autopilot,Phase 3 - Scale,FAV-304 FAV-1302
+Task,FAV-1402,,Autopilot,Scheduler,Trigger autopilot runs on schedule via cron/scheduled workflows.,"- Fires at next_run_at
+- Advances schedule after run
+- Missed-run handling",Medium,5,autopilot orchestration,Phase 3 - Scale,FAV-1401 FAV-901
+Story,FAV-1403,,Autopilot,Auto idea + full run,As the platform I auto-generate an idea and run the full pipeline for each scheduled slot.,"- Fresh idea per run
+- Full pipeline + publish
+- Failures alert the owner",Medium,5,autopilot,Phase 3 - Scale,FAV-1402 FAV-902 FAV-1302
+Story,FAV-1404,,Autopilot,Originality safeguards,As the platform I nudge autopilot output toward original/varied content to reduce platform-policy risk.,"- Variation across runs
+- Optional editorial review gate
+- Policy-risk guidance surfaced",High,3,autopilot safety compliance,Phase 3 - Scale,FAV-1403
+Story,FAV-1405,,Autopilot,Autopilot history & controls,As a creator I view autopilot run history and pause/resume rules.,"- Run history with outcomes
+- Pause/resume
+- Per-run cost visible",Low,3,autopilot frontend,Phase 3 - Scale,FAV-1403
+Epic,FAV-E15,Public API & MCP,,Public API & MCP,"Programmatic access to generation for developers, plus an MCP server for AI tools.",,High,,epic,,
+Story,FAV-1501,,Public API & MCP,API key management,As a developer I issue and revoke API keys scoped to my org.,"- Issue/revoke keys
+- Scopes enforced
+- Keys metered to org credits",Medium,3,api,Phase 3 - Scale,FAV-202
+Story,FAV-1502,,Public API & MCP,Generation REST endpoints,As a developer I POST /v1/videos/generate and poll GET /v1/videos/{id}.,"- Async generate returns job id
+- Status polling to completion
+- Auth via API key",Medium,5,api,Phase 3 - Scale,FAV-1501 FAV-902
+Task,FAV-1503,,Public API & MCP,API rate limiting + metering,Rate-limit the API per org and meter usage against credits.,"- Per-org rate limits
+- Credit debit per call
+- 429 with retry info",Medium,3,api billing,Phase 3 - Scale,FAV-1502 FAV-1604
+Task,FAV-1504,,Public API & MCP,API documentation,Publish OpenAPI spec and developer docs.,"- OpenAPI spec generated
+- Docs site published
+- Auth + examples included",Low,3,api docs,Phase 3 - Scale,FAV-1502
+Story,FAV-1505,,Public API & MCP,MCP server,As a developer I drive video generation from AI tools (Claude/Cursor) via MCP.,"- MCP server wraps REST API
+- Auth via account or API key
+- Published + documented",Low,5,api mcp,Phase 3 - Scale,FAV-1502
+Epic,FAV-E16,"Observability, Security & Compliance",,"Observability, Security & Compliance","Keep the platform safe, legible, and compliant — tracing, moderation, encryption, retention, alerting.",,High,,epic,,
+Task,FAV-1601,,"Observability, Security & Compliance",Pipeline tracing,"Trace jobs end-to-end with correlated IDs across web, workflow, and workers.","- Single trace per video job
+- Cross-service correlation
+- Searchable in tooling",High,3,observability,Phase 2 - Product,FAV-107 FAV-902
+Task,FAV-1602,,"Observability, Security & Compliance",Product analytics,Instrument key funnels with PostHog.,"- Signup->first-video funnel
+- Feature usage events
+- Dashboards for activation/retention",Medium,2,observability growth,Phase 2 - Product,FAV-106
+Task,FAV-1603,,"Observability, Security & Compliance",Secret & token encryption at rest,Encrypt OAuth tokens and voice-clone samples at rest.,"- Envelope encryption for tokens
+- Keys rotated
+- No plaintext secrets in DB",Highest,3,security,Phase 2 - Product,FAV-304
+Task,FAV-1604,,"Observability, Security & Compliance",Rate limiting,Rate-limit the generation endpoint and API per org.,"- Generation endpoint limited
+- Redis-backed limiter
+- Clear limit responses",High,3,security,Phase 1 - MVP,FAV-104
+Story,FAV-1605,,"Observability, Security & Compliance",Content moderation pipeline,As the platform I moderate inputs and optionally outputs to stay policy-compliant.,"- Input moderation enforced
+- Output spot-check option
+- Decisions logged/appealable",High,3,safety compliance,Phase 2 - Product,FAV-405
+Story,FAV-1606,,"Observability, Security & Compliance",Data retention & deletion,"As a user I can delete my data, and old data is retained per policy.","- User-initiated deletion
+- Retention windows enforced
+- Deletion cascades assets",High,3,compliance,Phase 3 - Scale,FAV-1001
+Task,FAV-1607,,"Observability, Security & Compliance",Provenance & AI disclosure,Support content provenance/watermarking and platform AI-disclosure metadata.,"- Provenance metadata attached
+- Optional watermark
+- Disclosure flags on publish",Medium,3,compliance,Phase 3 - Scale,FAV-1302
+Task,FAV-1608,,"Observability, Security & Compliance",Ops alerting,"Alert on queue depth, provider health, and error spikes.","- Alerts on queue backlog
+- Provider outage alerts
+- Error-rate thresholds paged",High,3,observability reliability,Phase 1 - MVP,FAV-107 FAV-906
+Epic,FAV-E17,Admin & Support Tooling,,Admin & Support Tooling,"Internal tools so the team can operate the platform: monitor jobs, adjust credits, and support users.",,High,,epic,,
+Story,FAV-1701,,Admin & Support Tooling,Admin dashboard,"As an operator I view users, orgs, and credit balances.","- Search users/orgs
+- View balances + ledger
+- Access restricted to staff",Medium,3,admin,Phase 2 - Product,FAV-303
+Story,FAV-1702,,Admin & Support Tooling,Job monitoring + manual actions,As an operator I inspect stuck jobs and manually retry or refund.,"- Job list with states + errors
+- Manual retry action
+- Manual refund writes ledger entry",High,5,admin support,Phase 2 - Product,FAV-905 FAV-904
+Task,FAV-1703,,Admin & Support Tooling,Feature flags,Gate features/tiers behind flags for rollout.,"- Flags per org/tier
+- Runtime toggles
+- Default-off for risky features",Medium,2,admin,Phase 2 - Product,FAV-106
+Story,FAV-1704,,Admin & Support Tooling,Audited support impersonation,As support I can view a user's account (impersonate) with full audit logging.,"- Impersonation gated to support role
+- Every action audited
+- Time-boxed sessions",Low,3,admin support security,Phase 3 - Scale,FAV-203
