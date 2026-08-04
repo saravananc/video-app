@@ -1,16 +1,23 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, Input } from "@/components/ui";
 
 type Mode = "login" | "signup";
 
+interface AuthConfig {
+  provider: "local" | "clerk";
+  signInUrl: string | null;
+  signUpUrl: string | null;
+}
+
 function AuthForm() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") ?? "/dashboard";
+  const [config, setConfig] = useState<AuthConfig | null>(null);
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,6 +25,13 @@ function AuthForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Don't offer a password form the API will reject when Clerk owns identity.
+    void fetch("/api/auth/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setConfig(body ?? { provider: "local", signInUrl: null, signUpUrl: null }));
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -55,6 +69,40 @@ function AuthForm() {
     });
     setBusy(false);
     setNotice("If that address has an account, a reset link is on its way.");
+  }
+
+  // Clerk owns identity: send people to its hosted pages rather than showing a
+  // password form that /api/auth/login would refuse.
+  if (config?.provider === "clerk") {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">
+            <span className="text-accent">FAV</span> Studio
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">Sign in to create faceless videos</p>
+        </div>
+        <Card className="flex flex-col gap-3 text-center">
+          {config.signInUrl ? (
+            <>
+              <a href={`${config.signInUrl}?redirect_url=${encodeURIComponent(next)}`}>
+                <Button className="w-full">Sign in</Button>
+              </a>
+              {config.signUpUrl ? (
+                <a href={config.signUpUrl} className="text-sm text-accent hover:underline">
+                  Create an account
+                </a>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-sm text-danger">
+              Clerk is enabled but no sign-in URL is configured. Set
+              <code className="mx-1 text-xs">NEXT_PUBLIC_CLERK_SIGN_IN_URL</code>.
+            </p>
+          )}
+        </Card>
+      </main>
+    );
   }
 
   return (

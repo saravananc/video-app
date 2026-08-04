@@ -24,8 +24,15 @@ signup, and reset. Login and reset responses are identical for unknown and
 known addresses so accounts can't be enumerated.
 
 Sessions are HMAC-signed cookies (`httpOnly`, `sameSite=lax`, `secure` in
-production). To move to Clerk or OAuth later, call `provisionExternalUser`
-from the callback — the org/membership/starter-credit provisioning is shared.
+production).
+
+Setting `CLERK_SECRET_KEY` hands identity to Clerk instead: the `__session`
+cookie becomes the only accepted session, verified locally as RS256 against the
+cached instance JWKS (`apps/web/src/lib/clerk-jwt.ts`), and a user seen for the
+first time is provisioned through the same org/membership/starter-credit path.
+The two schemes are deliberately exclusive — with Clerk on, the local password
+endpoints are not consulted, so there's no second door into an account. For a
+different OAuth provider, call `provisionExternalUser` from your callback.
 
 ## Environments (FAV-103)
 
@@ -42,7 +49,8 @@ database, buckets, and secrets. Keep secrets in your platform's secret store
 | Redis | `REDIS_URL` | **Required in production.** Rate limiting uses a sliding window over a Redis sorted set, evaluated atomically in Lua so the window is shared across the fleet. Without it the limiter falls back to in-memory: per-process, so limits multiply by instance count and reset on every deploy. A Redis outage fails *open* (requests allowed, error logged) so generation never goes down with it. |
 | Cloudflare R2 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | FAV-105. Create the bucket with least-privilege keys. Add a lifecycle rule expiring `videos/*/narration.*` after ~7 days (intermediates); final renders are kept. |
 | Email | `RESEND_API_KEY`, `EMAIL_FROM` | **Required in production.** Verification and password-reset links. Without it the console provider logs messages instead of sending them. |
-| Clerk (optional) | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | Not integrated yet. Built-in email+password auth is the default; `provisionExternalUser` is the hook for adding Clerk or OAuth, mapping to `users.auth_provider_id`. |
+| Clerk (optional) | `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_ISSUER`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `CLERK_WEBHOOK_SECRET` | Leave unset for built-in email+password auth. Set `CLERK_SECRET_KEY` and Clerk owns identity. The publishable key must be set too — edge middleware can't read the secret and would otherwise look for the wrong cookie. `CLERK_ISSUER` is your frontend API origin; the JWKS URL is derived from it unless `CLERK_JWKS_URL` overrides. Point Clerk's `user.created`/`user.updated` webhook at `/api/webhooks/clerk`. |
+| Moderation | `OPENAI_API_KEY`, or `FAV_MODERATION_PROVIDER=keywords` | **Production won't boot without one.** With a key, prompts are classified by `omni-moderation-latest` before any paid provider is called; the keyword list runs first as a cheap pre-filter and again as the fallback if the classifier is unreachable, in which case the request is marked `flagged` for review rather than silently allowed. `FAV_MODERATION_THRESHOLD` (default 0.7) sets the score at which non-bright-line categories are flagged. |
 | Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Create products for starter/pro/scale plans + three top-up packs; point the webhook at `/api/webhooks/payments` with events `checkout.session.completed`, `invoice.paid`, `customer.subscription.deleted`. |
 | Mux | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Optional adaptive streaming; without it the app serves the MP4 directly. |
 | Sentry / PostHog | `SENTRY_DSN`, `NEXT_PUBLIC_POSTHOG_KEY` | Observability hooks. |

@@ -16,6 +16,7 @@ import { ElevenLabsTtsProvider } from "./tts/elevenlabs.js";
 import { MockTranscriptionProvider } from "./transcription/mock.js";
 import { WhisperTranscriptionProvider } from "./transcription/whisper.js";
 import { MockModerationProvider } from "./moderation/mock.js";
+import { OpenAiModerationProvider } from "./moderation/openai.js";
 import { FsStorageProvider } from "./storage/fs.js";
 import { R2StorageProvider } from "./storage/r2.js";
 
@@ -70,7 +71,30 @@ export function getTranscriptionProvider(): TranscriptionProvider {
   return new MockTranscriptionProvider();
 }
 
+/**
+ * Content moderation (FAV-405/1605). Unlike the other providers, the mock here
+ * is a regex keyword list — genuinely weaker than the real adapter, not just
+ * offline. It is the only screening between user input and paid provider
+ * accounts, so production refuses to fall back to it silently.
+ */
 export function getModerationProvider(): ModerationProvider {
+  const choice = process.env.FAV_MODERATION_PROVIDER;
+  if (choice === "openai" || (!choice && process.env.OPENAI_API_KEY)) {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) throw new Error("FAV_MODERATION_PROVIDER=openai requires OPENAI_API_KEY");
+    return new OpenAiModerationProvider(key);
+  }
+
+  if (
+    process.env.NODE_ENV === "production" &&
+    choice !== "keywords" &&
+    process.env.FAV_ALLOW_INSECURE_DEFAULTS !== "1"
+  ) {
+    throw new Error(
+      "No content moderation classifier configured. Set OPENAI_API_KEY, or " +
+        "FAV_MODERATION_PROVIDER=keywords to accept keyword-only screening."
+    );
+  }
   return new MockModerationProvider();
 }
 

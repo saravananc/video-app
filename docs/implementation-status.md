@@ -8,19 +8,23 @@
 
 | Metric | Value |
 |---|---|
-| Backlog items fully done | 84 / 98 (86%) |
-| Backlog items partially done | 10 / 98 |
+| Backlog items fully done | 86 / 98 (88%) |
+| Backlog items partially done | 8 / 98 |
 | Backlog items not started | 4 / 98 |
-| Automated tests | 113 across 5 packages (17 test files) |
-| API routes | 46 |
+| Automated tests | 133 across 5 packages (19 test files) |
+| API routes | 47 |
 | Database tables | 23 (4 migrations) |
 | TODO / FIXME markers in source | 0 |
-| Documented environment variables | 59 |
+| Documented environment variables | 64 |
 
 The generation pipeline, billing, publishing, autopilot, public API, and admin
-tooling are complete and verified end to end. **The application is not
-production-deployable today**, blocked primarily by unverified paid-provider
-integrations, an unusable Clerk path, and a keyword-list content moderator. See
+tooling are complete and verified end to end.
+
+**Update 2026-08-04 — both P0 blockers are now resolved.** Content moderation has
+a real classifier adapter with a production boot guard, and the Clerk path
+verifies sessions end to end. The remaining gap before a production deploy is
+that the paid-provider adapters (ElevenLabs, fal.ai, Stripe live mode, Mux,
+YouTube) have never run against real credentials. See
 [Production Readiness](#9-production-readiness-checklist).
 
 ---
@@ -77,6 +81,8 @@ Fully implemented, tested, and verified working end to end.
 | Feature | Backlog | Modules | Verification |
 |---|---|---|---|
 | Email/password auth: scrypt, verification, reset, lockout | FAV-201 | `apps/web/src/lib/auth.ts`, `packages/providers/src/password.ts` | 15 tests + live flow on Postgres |
+| Clerk session verification (RS256 + cached JWKS, rotation, JIT provisioning) | FAV-201 | `apps/web/src/lib/clerk-jwt.ts`, `lib/auth.ts`, `middleware.ts`, `api/auth/config/` | 14 tests signing real RSA tokens: forgery, `alg:none`, expiry, `nbf`, issuer pinning, rotation |
+| Content moderation with a real classifier + production boot guard | FAV-405/1605 | `packages/providers/src/moderation/openai.ts`, `src/env.ts` | 12 tests incl. degrade-to-flagged on classifier outage |
 | Orgs, memberships, roles, org switcher | FAV-202/203 | `apps/web/src/lib/auth.ts`, `components/org-switcher.tsx` | Role tests; switcher re-checks membership |
 | Protected routes & middleware | FAV-204 | `apps/web/src/middleware.ts` | Live 401/redirect verified |
 | Teammate invites | FAV-205 | `apps/web/src/app/api/org/invites/` | Live accept flow verified |
@@ -99,8 +105,6 @@ Fully implemented, tested, and verified working end to end.
 
 | Feature | Backlog | Done | Remaining | Priority |
 |---|---|---|---|---|
-| **Clerk authentication** | FAV-201 | Adapter, webhook signature verification, user→org provisioning | **No session verification.** Setting `CLERK_SECRET_KEY` disables local login/signup but no Clerk login path exists — the app becomes unusable. Needs middleware + `getSession` integration. | **P0 if used** |
-| Content moderation | FAV-405/1605 | Input + output moderation wired into the pipeline; decisions logged | `getModerationProvider()` returns the mock **unconditionally** — a regex keyword list, not a classifier. No real adapter exists. | **P0** |
 | TikTok publishing | FAV-1303 | Full adapter; contract tests against a local fake | Never executed against the live API. Requires TikTok app review; posts are private-only until approved. | P1 |
 | Instagram Reels publishing | FAV-1304 | Adapter written | Never executed. Passes the IG account id through the token `scopes` array — a hack that will likely break. Needs Business account + App Review. | P1 |
 | Text-to-video (max tier) | FAV-503 | fal.ai Kling adapter, per-second metering, graceful downgrade, flag-gated | Never executed against the live API; mock returns `null` so the path always downgrades to stills. | P2 |
@@ -139,9 +143,9 @@ becomes in production.
 
 ### Mocks with **no** real adapter — genuine gaps
 
-| Mock | File | Issue | Required for production |
-|---|---|---|---|
-| **Moderation** | `moderation/mock.ts` | `getModerationProvider()` ignores env entirely and always returns the regex keyword list | Implement a real classifier adapter (OpenAI Moderation / Anthropic) and env selection. **P0 — this is the only thing standing between user input and paid provider accounts.** |
+None remaining. Moderation was the last one; it now has
+`OpenAiModerationProvider` (`moderation/openai.ts`) selected by env, and
+production boot fails if no classifier is configured.
 
 ### Dev-only UI surfaces (must not ship enabled)
 
@@ -229,6 +233,7 @@ All 46 routes exist. Status is **Available** unless noted.
 | Public API v1 | `POST /videos/generate`, `GET /videos/[id]`, `GET /openapi.json` | Available |
 | Admin | `/overview`, `/jobs`, `/jobs/[id]`, `/flags`, `/health`, `/maintenance`, `/impersonate` | Available |
 | Webhooks | `POST /payments`, `POST /clerk` | Available |
+| Auth | `GET /api/auth/config` → `{provider:"local"\|"clerk", signInUrl, signUpUrl}` | Available |
 | Flags | `GET /api/flags` | Available |
 | Assets | `GET /api/assets/[...key]` (dev FS storage, HMAC-signed) | Available |
 | Previews | `GET /api/previews/style/[style]` | Available |
@@ -238,7 +243,6 @@ All 46 routes exist. Status is **Available** unless noted.
 | Endpoint | Issue | Priority |
 |---|---|---|
 | `GET /api/voices` | Hardcodes `MockTtsProvider` for previews | P1 |
-| Clerk session path | **Missing entirely** — no route or middleware verifies a Clerk session | P0 if Clerk used |
 
 ---
 
@@ -261,8 +265,8 @@ All 46 routes exist. Status is **Available** unless noted.
 | **YouTube Data API** | Publishing | FAV-1301/1302 | ⚠️ Adapter only | `YOUTUBE_CLIENT_ID/SECRET` | Needs Google verification for quota |
 | **TikTok Content Posting** | Publishing | FAV-1303 | ⚠️ Contract-tested | `TIKTOK_CLIENT_KEY/SECRET` | Needs app audit |
 | **Instagram Graph** | Reels publishing | FAV-1304 | ⚠️ Adapter, known defect | `INSTAGRAM_APP_ID/SECRET` | Account id passed via `scopes` — will likely break |
-| **Clerk** | External auth | FAV-201 | ❌ **Unusable** | `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET` | Webhook works; **no login path** |
-| **Content moderation** | Safety | FAV-405/1605 | ❌ **No real adapter** | — | Regex keyword list only |
+| **Clerk** | External auth | FAV-201 | ⚠️ Complete, tested against locally-signed tokens | `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_ISSUER`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `CLERK_WEBHOOK_SECRET` | Session verification, JIT provisioning, and webhook all work. Optional — leave `CLERK_SECRET_KEY` unset for built-in auth |
+| **OpenAI Moderation** | Safety | FAV-405/1605 | ⚠️ Adapter written, never run live | `OPENAI_API_KEY` or `FAV_MODERATION_PROVIDER` | `omni-moderation-latest`; keyword list is now a pre-filter and outage fallback, not the whole policy |
 | SMS / OTP | — | — | Not required | — | No phone-based flows in the backlog |
 | Push notifications | — | — | Not required | — | Not in the backlog |
 
@@ -292,17 +296,20 @@ Migrations: `0000_init`, `0001_job_queue_lease`, `0002_auth_credentials`,
 
 Fail-fast at boot (`apps/web/next.config.ts`): production refuses to start
 without `FAV_SESSION_SECRET`, `FAV_ENCRYPTION_KEY`,
-`FAV_STORAGE_SIGNING_SECRET`, `DATABASE_URL`.
+`FAV_STORAGE_SIGNING_SECRET`, `DATABASE_URL`. `getModerationProvider()` adds a
+second guard: in production it throws unless a classifier is configured or
+`FAV_MODERATION_PROVIDER=keywords` accepts keyword-only screening on purpose.
 
 | Category | Required in production |
 |---|---|
 | Secrets | `FAV_SESSION_SECRET`, `FAV_ENCRYPTION_KEY` (32-byte hex), `FAV_STORAGE_SIGNING_SECRET`, `FAV_PAYMENTS_SECRET` |
 | Data | `DATABASE_URL`, `REDIS_URL` |
+| Safety | `OPENAI_API_KEY` (or an explicit `FAV_MODERATION_PROVIDER=keywords`) |
 | Storage | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
 | Topology | `FAV_EMBEDDED_WORKER=0`, `FAV_SCHEDULERS=0`, `FAV_AUTO_SEED=0` |
 | Worker | `FAV_WORKER_CONCURRENCY`, `FAV_JOB_LEASE_MS`, `FAV_WORKER_SCHEDULERS=1` on exactly one replica |
 
-Full list with per-variable notes in [`.env.example`](../.env.example) (59 vars)
+Full list with per-variable notes in [`.env.example`](../.env.example) (64 vars)
 and [`docs/deployment.md`](deployment.md).
 
 ### Outstanding configuration work
@@ -325,7 +332,6 @@ littered.
 | Item | Location | Impact | Priority |
 |---|---|---|---|
 | Instagram adapter passes the IG account id through the OAuth `scopes` array | `publishers/instagram.ts` | Fragile hack that will likely fail on first live contact | P1 |
-| Moderation provider ignores env selection | `providers/src/env.ts:73` | Silently unswappable; looks configurable but isn't | **P0** |
 | `pruneAuthTokens` has zero call sites | `db/src/auth-tokens.ts` | Spent tokens accumulate forever | P2 |
 | `audit_log` written in only 3 places (impersonation) | `api/admin/impersonate/` | Admin refunds/adjustments and flag changes aren't audited | P1 |
 | `apps/render`, `apps/worker`, `apps/mcp` have no tests | — | Render composition and worker lifecycle covered only indirectly | P1 |
@@ -343,13 +349,13 @@ littered.
 
 | # | Blocker | Area | Detail |
 |---|---|---|---|
-| 1 | **Content moderation is a regex list** | Security | `getModerationProvider()` always returns the mock. Only defence protecting paid provider accounts from prohibited prompts. Needs a real classifier. |
-| 2 | **Clerk path is unusable** | Auth | Setting `CLERK_SECRET_KEY` disables local auth with no Clerk login implemented. Either finish the integration or document that Clerk must stay unset. |
-| 3 | **No paid provider verified live** | Integration | LLM, visuals, TTS, transcription, storage, payments, email have never made a real API call. Each needs a staging smoke test. |
-| 4 | **Email unverified** | Auth | Verification and password reset are unusable without a working Resend integration — new users can't confirm their address. |
-| 5 | **Infrastructure not provisioned** | Infra | Postgres, Redis, R2, worker host all need accounts. |
-| 6 | **`FAV_AUTO_SEED` defaults on** | Security | Demo accounts with a known password would be created in production unless explicitly disabled. |
-| 7 | **No backup/restore procedure** | Data | The credit ledger is the billing source of truth with no documented recovery path. |
+| ~~1~~ | ~~**Content moderation is a regex list**~~ | Security | **Resolved 2026-08-04.** `OpenAiModerationProvider` classifies against `omni-moderation-latest`; production boot fails without a configured classifier unless `FAV_MODERATION_PROVIDER=keywords` opts out explicitly. |
+| ~~2~~ | ~~**Clerk path is unusable**~~ | Auth | **Resolved 2026-08-04.** `verifyClerkSessionToken` verifies RS256 against cached JWKS; `getSession` provisions on first sight; middleware and the login page follow whichever scheme is active. |
+| 1 | **No paid provider verified live** | Integration | LLM, visuals, TTS, transcription, storage, payments, email, and the new moderation adapter have never made a real API call. Each needs a staging smoke test. |
+| 2 | **Email unverified** | Auth | Verification and password reset are unusable without a working Resend integration — new users can't confirm their address. |
+| 3 | **Infrastructure not provisioned** | Infra | Postgres, Redis, R2, worker host all need accounts. |
+| 4 | **`FAV_AUTO_SEED` defaults on** | Security | Demo accounts with a known password would be created in production unless explicitly disabled. |
+| 5 | **No backup/restore procedure** | Data | The credit ledger is the billing source of truth with no documented recovery path. |
 
 ### P1 — should fix before general availability
 
@@ -394,8 +400,8 @@ Nothing else can be validated until real infrastructure exists.
 
 | Order | Task | Backlog | Depends on |
 |---|---|---|---|
-| 6 | **Real moderation adapter + env selection** | FAV-405/1605 | — |
-| 7 | Decide Clerk: finish session verification, or remove the env branch so local auth can't be silently disabled | FAV-201 | — |
+| ~~6~~ | ~~Real moderation adapter + env selection~~ | FAV-405/1605 | **Done** — verify live in Stage 3 |
+| ~~7~~ | ~~Decide Clerk~~ | FAV-201 | **Done** — session verification implemented; verify against a real Clerk instance in Stage 3 |
 | 8 | Security headers, CSP, request size limits | FAV-1604 | — |
 | 9 | Write admin actions to `audit_log` | FAV-1702/1704 | — |
 | 10 | Key rotation procedure | FAV-1603 | 1 |
@@ -411,6 +417,8 @@ spend cap.
 | 12 | R2 + signed URL verification | FAV-1001 | Low |
 | 13 | Stripe: checkout, webhooks, renewal, cancellation | FAV-1201/1202/1204 | Medium — webhook signature path untested live |
 | 14 | Sentry + PostHog verification | FAV-107/1602 | Low |
+| 14b | OpenAI Moderation smoke test; confirm the degrade-to-flagged path under a forced outage | FAV-405/1605 | Low |
+| 14c | Clerk against a real instance: JWKS fetch, `__session` cookie, JIT provisioning | FAV-201 | Low — only if Clerk is used |
 | 15 | YouTube OAuth + upload (needs Google verification) | FAV-1301/1302 | Medium — quota approval can take weeks |
 | 16 | Fix Instagram account-id handling, then live test | FAV-1304 | **High — known defect** |
 | 17 | TikTok live test (needs app audit) | FAV-1303 | **High — audit gates posting** |
@@ -438,9 +446,11 @@ Privacy policy, ToS, GDPR export · billing downgrade/proration · Mux HLS playe
 Provision infra ──┬─► Deploy workers ──┬─► Verify paid providers ──► Load test ──► Launch
                   │                    │
                   └─► Email working ───┘
-Moderation adapter ─────────────────────► (gates any public signup)
-Clerk decision ─────────────────────────► (gates auth configuration)
 ```
+
+Moderation and the Clerk path no longer sit on the critical path — both are
+implemented and tested; they only need a live smoke test alongside the other
+paid integrations in Stage 3.
 
 Stages 1 and 2 run in parallel. Stage 3 cannot start before Stage 1 (needs a
 deployed staging environment). Items 16 and 17 have external dependencies —

@@ -10,6 +10,7 @@ export { ElevenLabsTtsProvider } from "./tts/elevenlabs.js";
 export { MockTranscriptionProvider } from "./transcription/mock.js";
 export { WhisperTranscriptionProvider } from "./transcription/whisper.js";
 export { MockModerationProvider } from "./moderation/mock.js";
+export { OpenAiModerationProvider } from "./moderation/openai.js";
 export { FsStorageProvider } from "./storage/fs.js";
 export { R2StorageProvider } from "./storage/r2.js";
 export { encodeWav, wavDurationSeconds, SAMPLE_RATE } from "./audio/wav.js";

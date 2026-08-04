@@ -82,12 +82,47 @@ export interface Session {
   memberships: OrgMembershipSummary[];
 }
 
+/** Clerk's session cookie name. */
+const CLERK_SESSION_COOKIE = "__session";
+
+/**
+ * Resolve a Clerk session into a local user, provisioning on first sight
+ * (FAV-201). Returns null when Clerk isn't configured or the token is invalid.
+ */
+async function resolveClerkUserId(jar: Awaited<ReturnType<typeof cookies>>): Promise<string | null> {
+  if (!process.env.CLERK_SECRET_KEY) return null;
+  const token = jar.get(CLERK_SESSION_COOKIE)?.value;
+  if (!token) return null;
+
+  const { verifyClerkSessionToken } = await import("./clerk-jwt");
+  const claims = await verifyClerkSessionToken(token);
+  if (!claims) return null;
+
+  const db = getDb();
+  const authProviderId = `clerk:${claims.sub}`;
+  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.authProviderId, authProviderId));
+  if (existing) return existing.id;
+
+  // First request from a user Clerk already knows: create their account here
+  // rather than depending on the webhook having arrived first.
+  const { syncClerkUser } = await import("./clerk");
+  const provisioned = await syncClerkUser(claims.sub);
+  return provisioned?.userId ?? null;
+}
+
 export async function getSession(): Promise<Session | null> {
   const jar = await cookies();
-  const token = jar.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  const userId = verifySessionToken(token);
+
+  // Clerk owns identity when configured; the local cookie is ignored so the
+  // two schemes can't be mixed.
+  const userId = process.env.CLERK_SECRET_KEY
+    ? await resolveClerkUserId(jar)
+    : (() => {
+        const token = jar.get(SESSION_COOKIE)?.value;
+        return token ? verifySessionToken(token) : null;
+      })();
   if (!userId) return null;
+
   const session = await sessionForUser(userId, jar.get(ACTIVE_ORG_COOKIE)?.value);
   if (!session) return null;
 
