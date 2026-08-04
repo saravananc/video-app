@@ -1,0 +1,33 @@
+# Worker pool deployment (FAV-807): renders run isolated from the web tier and
+# the pool autoscales on queue depth. Referenced by the CI deploy stage.
+app = "fav-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.worker"
+
+[env]
+  FAV_WORKER_CONCURRENCY = "2"
+  FAV_WORKER_POLL_MS = "2000"
+  # Exactly one replica should own the autopilot + maintenance sweeps; set this
+  # to "1" on a dedicated single-instance process group instead of here if you
+  # scale this group past one machine.
+  FAV_WORKER_SCHEDULERS = "0"
+
+[processes]
+  worker = "node apps/worker/dist/main.js"
+
+# Renders are CPU- and memory-hungry; Remotion needs headroom for Chromium.
+[[vm]]
+  size = "performance-2x"
+  memory = "8gb"
+
+[[metrics]]
+  port = 9091
+  path = "/metrics"
+
+# No public HTTP service: this pool only pulls from the queue.
+[http_service]
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1

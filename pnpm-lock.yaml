@@ -105,7 +105,7 @@ importers:
         version: 1.9.1
       '@sentry/nextjs':
         specifier: ^10.69.0
-        version: 10.69.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(next@15.5.22(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(webpack@5.105.0)
+        version: 10.69.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(next@15.5.22(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(webpack@5.105.0(lightningcss@1.32.0))
       drizzle-orm:
         specifier: ^0.44.7
         version: 0.44.7(@electric-sql/pglite@0.3.16)(@opentelemetry/api@1.9.1)(@types/pg@8.20.3)(pg@8.22.0)
@@ -149,6 +149,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.0)(tsx@4.23.1)
 
   apps/worker:
     dependencies:
@@ -5095,7 +5098,7 @@ snapshots:
       - encoding
       - supports-color
 
-  '@sentry/bundler-plugins@10.69.0(rollup@4.62.4)(webpack@5.105.0)':
+  '@sentry/bundler-plugins@10.69.0(rollup@4.62.4)(webpack@5.105.0(lightningcss@1.32.0))':
     dependencies:
       '@babel/core': 7.29.7
       '@sentry/cli': 2.58.6
@@ -5106,7 +5109,7 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       rollup: 4.62.4
-      webpack: 5.105.0
+      webpack: 5.105.0(lightningcss@1.32.0)
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -5165,7 +5168,7 @@ snapshots:
     dependencies:
       '@sentry/core': 10.69.0
 
-  '@sentry/nextjs@10.69.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(next@15.5.22(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(webpack@5.105.0)':
+  '@sentry/nextjs@10.69.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(next@15.5.22(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(webpack@5.105.0(lightningcss@1.32.0))':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@rollup/plugin-commonjs': 28.0.1(rollup@4.62.4)
@@ -5178,7 +5181,7 @@ snapshots:
       '@sentry/react': 10.69.0(react@19.2.8)
       '@sentry/server-utils': 10.69.0
       '@sentry/vercel-edge': 10.69.0
-      '@sentry/webpack-plugin': 5.4.0(rollup@4.62.4)(webpack@5.105.0)
+      '@sentry/webpack-plugin': 5.4.0(rollup@4.62.4)(webpack@5.105.0(lightningcss@1.32.0))
       next: 15.5.22(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       rollup: 4.62.4
       stacktrace-parser: 0.1.11
@@ -5259,10 +5262,10 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@sentry/core': 10.69.0
 
-  '@sentry/webpack-plugin@5.4.0(rollup@4.62.4)(webpack@5.105.0)':
+  '@sentry/webpack-plugin@5.4.0(rollup@4.62.4)(webpack@5.105.0(lightningcss@1.32.0))':
     dependencies:
-      '@sentry/bundler-plugins': 10.69.0(rollup@4.62.4)(webpack@5.105.0)
-      webpack: 5.105.0
+      '@sentry/bundler-plugins': 10.69.0(rollup@4.62.4)(webpack@5.105.0(lightningcss@1.32.0))
+      webpack: 5.105.0(lightningcss@1.32.0)
     transitivePeerDependencies:
       - encoding
       - rollup
@@ -6988,13 +6991,15 @@ snapshots:
       lightningcss: 1.32.0
       postcss: 8.5.25
 
-  terser-webpack-plugin@5.6.1(webpack@5.105.0):
+  terser-webpack-plugin@5.6.1(lightningcss@1.32.0)(webpack@5.105.0(lightningcss@1.32.0)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.3.3
       terser: 5.49.0
-      webpack: 5.105.0
+      webpack: 5.105.0(lightningcss@1.32.0)
+    optionalDependencies:
+      lightningcss: 1.32.0
 
   terser@5.49.0:
     dependencies:
@@ -7172,7 +7177,7 @@ snapshots:
 
   webpack-sources@3.5.1: {}
 
-  webpack@5.105.0:
+  webpack@5.105.0(lightningcss@1.32.0):
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.9
@@ -7196,7 +7201,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(webpack@5.105.0)
+      terser-webpack-plugin: 5.6.1(lightningcss@1.32.0)(webpack@5.105.0(lightningcss@1.32.0))
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:

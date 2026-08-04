@@ -1,4 +1,5 @@
-# CI pipeline (FAV-102): lint, typecheck, tests, build on every PR and push to main.
+# CI/CD pipeline (FAV-102): PRs blocked on failing lint/type/test, staging
+# deploy on merge to main, deploy status reported back to the PR.
 name: CI
 
 on:
@@ -12,7 +13,21 @@ concurrency:
 
 jobs:
   verify:
+    name: Lint, typecheck, test
     runs-on: ubuntu-latest
+    services:
+      # The rate-limiter tests exercise the real Redis path when one is
+      # reachable, and skip themselves otherwise.
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
 
@@ -37,5 +52,83 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Test (includes migration run against embedded Postgres)
+      - name: Test
         run: pnpm test
+
+  deploy-staging:
+    name: Deploy to staging
+    # Only on merge to main, and only once the checks above are green.
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Record deployment start
+        uses: chrnorm/deployment-action@v2
+        id: deployment
+        with:
+          token: ${{ github.token }}
+          environment: staging
+
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: pnpm db:migrate
+
+      - name: Deploy web tier
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          npx vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx vercel@latest build --token="$VERCEL_TOKEN"
+          url=$(npx vercel@latest deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # The worker pool is a separate deployable so renders stay isolated from
+      # request serving (FAV-807). Skipped when no worker host is configured.
+      # The secrets context isn't available in step-level `if`, so the guard is
+      # inside the script.
+      - name: Deploy worker pool
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "FLY_API_TOKEN not set — skipping worker deploy"
+            exit 0
+          fi
+          curl -L https://fly.io/install.sh | sh
+          "$HOME/.fly/bin/flyctl" deploy --config fly.worker.toml --remote-only
+
+      - name: Report deployment status
+        if: always()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: ${{ github.token }}
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          environment-url: ${{ steps.deploy.outputs.url }}
+          state: ${{ job.status == 'success' && 'success' || 'failure' }}

@@ -2,8 +2,6 @@ import type { OAuthTokens, PublisherProvider, PublishMetadata } from "./types.js
 import { ReauthRequiredError, TransientPublishError } from "./types.js";
 
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
-const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
-const INIT_URL = "https://open.tiktokapis.com/v2/post/publish/video/init/";
 const SCOPES = ["user.info.basic", "video.publish"];
 
 /**
@@ -14,6 +12,10 @@ const SCOPES = ["user.info.basic", "video.publish"];
 export class TikTokPublisherProvider implements PublisherProvider {
   readonly platform = "tiktok" as const;
   readonly name = "tiktok";
+
+  /** Overridable so contract tests can point the adapter at a local fake. */
+  protected tokenUrl = "https://open.tiktokapis.com/v2/oauth/token/";
+  protected initUrl = "https://open.tiktokapis.com/v2/post/publish/video/init/";
 
   constructor(
     private readonly clientKey: string,
@@ -32,7 +34,7 @@ export class TikTokPublisherProvider implements PublisherProvider {
   }
 
   private async tokenRequest(form: Record<string, string>): Promise<OAuthTokens & { openId?: string }> {
-    const res = await fetch(TOKEN_URL, {
+    const res = await fetch(this.tokenUrl, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -90,7 +92,7 @@ export class TikTokPublisherProvider implements PublisherProvider {
   }) {
     const data = await videoData();
     // Two-phase: init declares size/chunks, then PUT the bytes (content rules respected).
-    const initRes = await fetch(INIT_URL, {
+    const initRes = await fetch(this.initUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${tokens.accessToken}`,
