@@ -13,6 +13,8 @@ import {
 } from "@fav/providers";
 
 export const SESSION_COOKIE = "fav_session";
+/** Which org the user is currently acting in, when they belong to several. */
+export const ACTIVE_ORG_COOKIE = "fav_org";
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 
 /** Lockout after repeated failures (FAV-201): slows credential stuffing. */
@@ -21,7 +23,13 @@ const LOCKOUT_MS = 15 * 60 * 1000;
 
 function secret(): string {
   const configured = process.env.FAV_SESSION_SECRET;
-  if (!configured && process.env.NODE_ENV === "production") {
+  if (
+    !configured &&
+    process.env.NODE_ENV === "production" &&
+    // Same escape hatch the boot-time config check honors, so running the
+    // production build locally doesn't fail only once someone tries to log in.
+    process.env.FAV_ALLOW_INSECURE_DEFAULTS !== "1"
+  ) {
     throw new Error("FAV_SESSION_SECRET must be set in production");
   }
   return configured ?? "dev-session-secret";
@@ -58,12 +66,20 @@ export const sessionCookieOptions = {
   path: "/"
 };
 
+export interface OrgMembershipSummary {
+  id: string;
+  name: string;
+  role: Role;
+}
+
 export interface Session {
   userId: string;
   orgId: string;
   role: Role;
   user: { id: string; email: string; name: string | null; isStaff: boolean; emailVerified: boolean };
   org: { id: string; name: string; plan: string; cachedBalance: number };
+  /** Every org this user belongs to, for the switcher (FAV-202). */
+  memberships: OrgMembershipSummary[];
 }
 
 export async function getSession(): Promise<Session | null> {
@@ -72,7 +88,7 @@ export async function getSession(): Promise<Session | null> {
   if (!token) return null;
   const userId = verifySessionToken(token);
   if (!userId) return null;
-  const session = await sessionForUser(userId);
+  const session = await sessionForUser(userId, jar.get(ACTIVE_ORG_COOKIE)?.value);
   if (!session) return null;
 
   // Audited support impersonation (FAV-1704): staff with an active, unexpired
@@ -92,7 +108,9 @@ export async function getSession(): Promise<Session | null> {
           ...session,
           orgId: org.id,
           role: "admin",
-          org: { id: org.id, name: `${org.name} (impersonating)`, plan: org.plan, cachedBalance: org.cachedBalance }
+          org: { id: org.id, name: `${org.name} (impersonating)`, plan: org.plan, cachedBalance: org.cachedBalance },
+          // Switching is meaningless while impersonating a specific org.
+          memberships: []
         };
       }
     }
@@ -100,7 +118,13 @@ export async function getSession(): Promise<Session | null> {
   return session;
 }
 
-export async function sessionForUser(userId: string): Promise<Session | null> {
+/**
+ * Build the session. When the user belongs to several orgs (FAV-202),
+ * `activeOrgId` selects which one they're acting in; an unrecognised value
+ * falls back to their first membership rather than failing, so a stale cookie
+ * from a revoked membership can't lock anyone out.
+ */
+export async function sessionForUser(userId: string, activeOrgId?: string): Promise<Session | null> {
   const db = getDb();
   const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) return null;
@@ -115,8 +139,9 @@ export async function sessionForUser(userId: string): Promise<Session | null> {
     .from(memberships)
     .innerJoin(organizations, eq(memberships.orgId, organizations.id))
     .where(eq(memberships.userId, userId));
-  const membership = rows[0];
-  if (!membership) return null;
+  if (rows.length === 0) return null;
+
+  const membership = rows.find((r) => r.orgId === activeOrgId) ?? rows[0]!;
   return {
     userId,
     orgId: membership.orgId,
@@ -133,7 +158,8 @@ export async function sessionForUser(userId: string): Promise<Session | null> {
       name: membership.orgName,
       plan: membership.plan,
       cachedBalance: membership.cachedBalance
-    }
+    },
+    memberships: rows.map((r) => ({ id: r.orgId, name: r.orgName, role: r.role }))
   };
 }
 

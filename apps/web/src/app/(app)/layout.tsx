@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDb, resolveFlags } from "@fav/db";
 import { getSession } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
+import { OrgSwitcher } from "@/components/org-switcher";
 
 /** Authenticated app shell: nav with org, balance, and sign-out (FAV-204). */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -57,9 +58,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             >
               {session.org.cachedBalance} credits
             </Link>
-            <span className="text-text-muted">
-              {session.org.name} · {session.user.name ?? session.user.email}
-            </span>
+            <OrgSwitcher current={session.org} memberships={session.memberships} />
+            <span className="text-text-muted">{session.user.name ?? session.user.email}</span>
             <LogoutButton />
           </div>
         </div>

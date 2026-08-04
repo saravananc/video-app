@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constants";
+import { withSentryConfig } from "@sentry/nextjs";
 
 /**
  * next.config runs in plain Node (never bundled), so it's the one place we can
@@ -70,9 +71,12 @@ export default async function config(phase: string): Promise<NextConfig> {
     }
   }
 
-  return {
+  const nextConfig: NextConfig = {
     // Native/wasm deps resolvable from this app are externalized here.
     serverExternalPackages: ["@electric-sql/pglite", "pg"],
+    // Source maps for readable Sentry stack traces (FAV-107 AC). Hidden so
+    // they're generated and uploaded but not referenced from served bundles.
+    productionBrowserSourceMaps: false,
     webpack: (webpackConfig, { isServer }) => {
       if (isServer) {
         // Workspace packages must stay unbundled on the server: the workflow
@@ -91,4 +95,18 @@ export default async function config(phase: string): Promise<NextConfig> {
       return webpackConfig;
     }
   };
+
+  // Only wrap when a Sentry org/project is configured: the plugin otherwise
+  // warns on every build and there's nowhere to upload maps to.
+  if (!process.env.SENTRY_ORG || !process.env.SENTRY_PROJECT) return nextConfig;
+
+  return withSentryConfig(nextConfig, {
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    silent: true,
+    // Upload source maps, then delete them so they aren't publicly served.
+    sourcemaps: { deleteSourcemapsAfterUpload: true },
+    disableLogger: true
+  });
 }

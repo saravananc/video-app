@@ -14,6 +14,7 @@ import {
   type VisualStyle
 } from "@fav/core";
 import { Button, Card, PillGroup, Textarea } from "@/components/ui";
+import { CaptionPreview } from "@/components/caption-preview";
 
 /** New-video wizard (FAV-1102): topic -> look & feel -> confirm with estimate. */
 export default function NewVideoPage() {
@@ -208,13 +209,36 @@ export default function NewVideoPage() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Visual style</label>
-            <PillGroup
-              options={(
-                ["cinematic", "anime", "3d", "watercolor", "photorealistic", "minimalist"] as VisualStyle[]
-              ).map((s) => ({ value: s, label: s }))}
-              value={visualStyle}
-              onChange={setVisualStyle}
-            />
+            {/* Thumbnails come from the same generator the pipeline uses, so a
+                preview can't drift from what actually gets rendered (FAV-506). */}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {(["cinematic", "anime", "3d", "watercolor", "photorealistic", "minimalist"] as VisualStyle[]).map(
+                (s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setVisualStyle(s)}
+                    className={`overflow-hidden rounded-lg border transition-colors ${
+                      visualStyle === s ? "border-accent ring-1 ring-accent" : "border-border-token hover:border-accent/50"
+                    }`}
+                  >
+                    <img
+                      src={`/api/previews/style/${s}`}
+                      alt={`${s} style preview`}
+                      loading="lazy"
+                      className="aspect-[9/16] w-full object-cover"
+                    />
+                    <span
+                      className={`block py-1 text-center text-[11px] capitalize ${
+                        visualStyle === s ? "text-accent" : "text-text-muted"
+                      }`}
+                    >
+                      {s}
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Captions</label>
@@ -226,6 +250,9 @@ export default function NewVideoPage() {
               value={captionStyle}
               onChange={setCaptionStyle}
             />
+            <div className="mt-2">
+              <CaptionPreview style={captionStyle} />
+            </div>
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium">Voice</label>

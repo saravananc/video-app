@@ -1,8 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { packById, planById } from "@fav/core";
-import { appendLedgerEntry, getDb, organizations, webhookEvents } from "@fav/db";
+import { newId, packById, planById } from "@fav/core";
+import { appendLedgerEntry, getDb, invoices, organizations, webhookEvents } from "@fav/db";
+import type { Db } from "@fav/db";
 import { getPaymentsProvider, WebhookVerificationError } from "@fav/providers";
+
+/** Record an invoice line for the billing history (FAV-1206). */
+async function recordInvoice(
+  db: Db,
+  args: {
+    orgId: string;
+    externalId: string;
+    description: string;
+    amountCents: number;
+    creditsGranted?: number;
+  }
+): Promise<void> {
+  await db
+    .insert(invoices)
+    .values({ id: newId("inv"), status: "paid", ...args })
+    .onConflictDoNothing({ target: invoices.externalId });
+}
 
 /**
  * Payment webhooks -> credit ledger (FAV-1202): signature verified by the
@@ -58,6 +76,13 @@ export async function POST(req: NextRequest) {
         stripeEventId: event.id,
         reason: `${plan.name} subscription started`
       });
+      await recordInvoice(db, {
+        orgId: event.orgId,
+        externalId: event.id,
+        description: `${plan.name} plan — subscription`,
+        amountCents: plan.priceCents,
+        creditsGranted: plan.monthlyCredits
+      });
       break;
     }
     case "checkout.completed.pack": {
@@ -70,6 +95,13 @@ export async function POST(req: NextRequest) {
         amount: pack.credits,
         stripeEventId: event.id,
         reason: `${pack.name} top-up`
+      });
+      await recordInvoice(db, {
+        orgId: event.orgId,
+        externalId: event.id,
+        description: `${pack.name} — ${pack.credits} credits`,
+        amountCents: pack.priceCents,
+        creditsGranted: pack.credits
       });
       break;
     }
@@ -84,6 +116,13 @@ export async function POST(req: NextRequest) {
         amount: plan.monthlyCredits,
         stripeEventId: event.id,
         reason: `${plan.name} monthly credit reset`
+      });
+      await recordInvoice(db, {
+        orgId: event.orgId,
+        externalId: event.id,
+        description: `${plan.name} plan — monthly renewal`,
+        amountCents: plan.priceCents,
+        creditsGranted: plan.monthlyCredits
       });
       break;
     }

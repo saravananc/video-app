@@ -4,6 +4,7 @@ import os from "node:os";
 import { and, asc, eq } from "drizzle-orm";
 import {
   buildCaptionCues,
+  createLogger,
   dimensionsFor,
   estimateVideoCost,
   newId,
@@ -29,6 +30,7 @@ import {
 } from "@fav/db";
 import {
   assetKeys,
+  getAnalytics,
   getStreamingProvider,
   synthesizeMusicTrack,
   withFallback,
@@ -97,6 +99,16 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
   const [video] = await deps.db.select().from(videos).where(eq(videos.id, videoId));
   if (!video) throw new Error(`Video ${videoId} not found`);
   const request = videoRequestSchema.parse(video.request);
+
+  // One trace id follows this video from enqueue through render (FAV-1601).
+  const log = createLogger({
+    traceId: job.traceId ?? undefined,
+    jobId,
+    videoId,
+    orgId: job.orgId
+  });
+  const startedAt = Date.now();
+  log.info("generation_started", { attempt: job.attempts, tier: request.tier });
 
   // Attempt counting belongs to the queue, which owns claiming and retries —
   // incrementing here too would double-count every run.
@@ -463,8 +475,32 @@ export async function runGenerationJob(deps: PipelineDeps, jobId: string): Promi
       .update(jobs)
       .set({ status: "completed", stage: "finalizing", stageProgress: 100, finishedAt: new Date() })
       .where(eq(jobs.id, jobId));
+
+    const elapsedMs = Date.now() - startedAt;
+    log.info("generation_completed", { elapsedMs, charged, scenes: sceneRows.length });
+    getAnalytics().capture({
+      distinctId: video.createdByUserId ?? job.orgId,
+      orgId: job.orgId,
+      event: "video_generation_completed",
+      properties: {
+        videoId,
+        elapsedMs,
+        credits: charged,
+        tier: request.tier,
+        durationSeconds: narrationDuration,
+        aspectRatio: request.aspectRatio,
+        resolution: request.resolution
+      }
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    log.error("generation_failed", err, { elapsedMs: Date.now() - startedAt });
+    getAnalytics().capture({
+      distinctId: video.createdByUserId ?? job.orgId,
+      orgId: job.orgId,
+      event: "video_generation_failed",
+      properties: { videoId, reason: message.slice(0, 200), terminal: err instanceof TerminalJobError }
+    });
     // Terminal failure: mark failed + full refund (FAV-904/808).
     await refundCredits(deps.db, { orgId: job.orgId, jobId, videoId, reason: `Failed: ${message.slice(0, 200)}` });
     await setVideoStatus(deps, videoId, "failed", { errorMessage: message });

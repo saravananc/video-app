@@ -16,16 +16,33 @@ interface LedgerData {
   }>;
 }
 
+interface Invoice {
+  id: string;
+  description: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  creditsGranted: number | null;
+  hostedInvoiceUrl: string | null;
+  issuedAt: string;
+}
+
 /** Billing: balance, plan, top-ups, ledger history (FAV-1201/1203/1206 MVP). */
 export default function BillingPage() {
   const [data, setData] = useState<LedgerData | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/billing/ledger", { cache: "no-store" });
-    if (res.ok) setData(await res.json());
-    else setError((await res.json()).error ?? "Failed to load billing");
+    const [ledgerRes, invoiceRes] = await Promise.all([
+      fetch("/api/billing/ledger", { cache: "no-store" }),
+      fetch("/api/billing/invoices", { cache: "no-store" })
+    ]);
+    if (ledgerRes.ok) setData(await ledgerRes.json());
+    else setError((await ledgerRes.json()).error ?? "Failed to load billing");
+    // Invoices are admin+ only; a 403 here just means no invoice section.
+    if (invoiceRes.ok) setInvoices((await invoiceRes.json()).invoices);
   }, []);
 
   useEffect(() => {
@@ -122,8 +139,59 @@ export default function BillingPage() {
         </div>
       </section>
 
+      {invoices.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold">Invoices</h2>
+          <div className="overflow-hidden rounded-xl border border-border-token">
+            <table className="w-full text-sm">
+              <thead className="bg-bg-subtle text-left text-xs uppercase text-text-muted">
+                <tr>
+                  <th className="px-4 py-2">Date</th>
+                  <th className="px-4 py-2">Description</th>
+                  <th className="px-4 py-2">Credits</th>
+                  <th className="px-4 py-2 text-right">Amount</th>
+                  <th className="px-4 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv) => (
+                  <tr key={inv.id} className="border-t border-border-token">
+                    <td className="px-4 py-2.5 text-text-muted">
+                      {new Date(inv.issuedAt).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric"
+                      })}
+                    </td>
+                    <td className="px-4 py-2.5">{inv.description}</td>
+                    <td className="px-4 py-2.5 text-text-muted">
+                      {inv.creditsGranted ? `+${inv.creditsGranted}` : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-medium">
+                      {(inv.amountCents / 100).toLocaleString(undefined, {
+                        style: "currency",
+                        currency: inv.currency.toUpperCase()
+                      })}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      {inv.hostedInvoiceUrl ? (
+                        <a href={inv.hostedInvoiceUrl} target="_blank" className="text-xs text-accent">
+                          View
+                        </a>
+                      ) : (
+                        <span className="text-xs capitalize text-success">{inv.status}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <section>
-        <h2 className="mb-3 text-lg font-semibold">History</h2>
+        <h2 className="mb-3 text-lg font-semibold">Credit history</h2>
         <div className="overflow-hidden rounded-xl border border-border-token">
           <table className="w-full text-sm">
             <tbody>

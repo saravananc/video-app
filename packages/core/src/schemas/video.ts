@@ -36,7 +36,7 @@ export const toneSchema = z.enum([
 ]);
 export type Tone = z.infer<typeof toneSchema>;
 
-export const videoStatusSchema = z.enum([
+export const VIDEO_STATUSES = [
   "draft",
   "queued",
   "generating",
@@ -44,7 +44,9 @@ export const videoStatusSchema = z.enum([
   "completed",
   "failed",
   "canceled"
-]);
+] as const;
+
+export const videoStatusSchema = z.enum(VIDEO_STATUSES);
 export type VideoStatus = z.infer<typeof videoStatusSchema>;
 
 /** Everything the creator chooses in the wizard (FAV-1102). */

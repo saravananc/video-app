@@ -1,5 +1,7 @@
 import { COST_TABLE } from "@fav/core";
 import { encodeWav, SAMPLE_RATE } from "../audio/wav.js";
+import { concatWav } from "../audio/concat.js";
+import { chunkNarration, DEFAULT_CHUNK_CHARS } from "./chunking.js";
 import type { TtsProvider, TtsResult } from "../types.js";
 
 /** Per-word timing model shared with the mock transcriber so captions align exactly. */
@@ -41,13 +43,33 @@ function hash(text: string): number {
 export class MockTtsProvider implements TtsProvider {
   readonly name = "mock";
 
+  /**
+   * Chunks like the real provider does (FAV-604) so the stitching path is
+   * exercised in dev, then concatenates the WAV segments.
+   */
   async synthesize(args: { text: string; voiceId: string; language: string }): Promise<TtsResult> {
-    const timings = mockWordTimings(args.text);
+    const chunks = chunkNarration(args.text, DEFAULT_CHUNK_CHARS);
+    if (chunks.length > 1) {
+      const parts = await Promise.all(chunks.map((chunk) => this.synthesizeOne(chunk, args.voiceId)));
+      const audio = concatWav(parts.map((p) => p.audio));
+      return {
+        audio,
+        contentType: "audio/wav",
+        extension: "wav",
+        durationSeconds: parts.reduce((sum, p) => sum + p.durationSeconds, 0),
+        costCredits: Math.max(1, Math.ceil(args.text.length / 1000) * COST_TABLE.ttsPerThousandChars)
+      };
+    }
+    return this.synthesizeOne(args.text, args.voiceId);
+  }
+
+  private async synthesizeOne(text: string, voiceId: string): Promise<TtsResult> {
+    const timings = mockWordTimings(text);
     const last = timings[timings.length - 1];
     const durationSeconds = (last ? last.endSec : 0.5) + 0.35; // tail pad
     const total = Math.ceil(durationSeconds * SAMPLE_RATE);
     const samples = new Float32Array(total);
-    const voiceBase = 120 + (hash(args.voiceId) % 120); // per-voice pitch
+    const voiceBase = 120 + (hash(voiceId) % 120); // per-voice pitch
 
     for (const { word, startSec, endSec } of timings) {
       const f0 = voiceBase + (hash(word) % 90);
@@ -72,7 +94,7 @@ export class MockTtsProvider implements TtsProvider {
       contentType: "audio/wav",
       extension: "wav",
       durationSeconds,
-      costCredits: Math.max(1, Math.ceil(args.text.length / 1000) * COST_TABLE.ttsPerThousandChars)
+      costCredits: Math.max(1, Math.ceil(text.length / 1000) * COST_TABLE.ttsPerThousandChars)
     };
   }
 

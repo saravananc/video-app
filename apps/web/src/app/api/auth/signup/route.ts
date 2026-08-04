@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getRateLimiter } from "@fav/providers";
+import { getAnalytics, getRateLimiter } from "@fav/providers";
 import { createSessionToken, sessionCookieOptions, SESSION_COOKIE, signUp, SignupError } from "@/lib/auth";
 
 const signupSchema = z.object({
@@ -32,6 +32,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const { userId, orgId } = await signUp(parsed.data);
+    // Funnel entry point (FAV-1602): signup -> first video.
+    getAnalytics().capture({ distinctId: userId, orgId, event: "user_signed_up" });
     const res = NextResponse.json({ ok: true, userId, orgId, verificationRequired: true }, { status: 201 });
     res.cookies.set(SESSION_COOKIE, createSessionToken(userId), sessionCookieOptions);
     return res;

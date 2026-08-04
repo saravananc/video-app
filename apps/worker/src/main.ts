@@ -1,5 +1,7 @@
+import * as Sentry from "@sentry/node";
+import { setErrorReporter, logger } from "@fav/core";
 import { getDb, runMigrations } from "@fav/db";
-import { getStorageProvider } from "@fav/providers";
+import { getAnalytics, getStorageProvider } from "@fav/providers";
 import {
   defaultDeps,
   reclaimExpiredLeases,
@@ -21,6 +23,26 @@ import {
  *   FAV_JOB_LEASE_MS        lease duration; heartbeat renews at a third of it
  *   FAV_WORKER_SCHEDULERS   "1" to also run autopilot + maintenance sweeps
  */
+/** Error tracking for the worker tier (FAV-107); no-op without a DSN. */
+function initSentry(): void {
+  if (!process.env.SENTRY_DSN) return;
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.1),
+    sendDefaultPii: false
+  });
+  // Structured-log errors carry their trace/job ids into Sentry (FAV-1601).
+  setErrorReporter((error, context) => {
+    Sentry.withScope((scope) => {
+      for (const [key, value] of Object.entries(context)) {
+        if (value !== undefined) scope.setTag(key, String(value));
+      }
+      Sentry.captureException(error);
+    });
+  });
+}
+
 async function main(): Promise<void> {
   // PGlite is an embedded single-writer database: a separate worker process
   // gets its own instance and never sees the web tier's writes, so jobs would
@@ -34,6 +56,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  initSentry();
   await runMigrations();
   const db = getDb();
   const deps = defaultDeps(db);
@@ -79,7 +102,10 @@ async function main(): Promise<void> {
     }, 30_000);
     await worker.stop();
     clearTimeout(forced);
-    console.log(JSON.stringify({ event: "worker_stopped" }));
+    // Drain buffered telemetry before the process goes away.
+    await getAnalytics().shutdown().catch(() => undefined);
+    if (process.env.SENTRY_DSN) await Sentry.flush(2000).catch(() => undefined);
+    logger.info("worker_stopped");
     process.exit(0);
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));

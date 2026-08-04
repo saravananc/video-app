@@ -502,6 +502,34 @@ export const apiKeys = pgTable(
 // Platform plumbing: webhooks, flags, moderation, audit (FAV-1202, 1703, 405, 1704)
 // ---------------------------------------------------------------------------
 
+/**
+ * Invoice history (FAV-1206). Recorded from payment webhooks so the billing
+ * page can show past charges without a live call to the payment provider.
+ */
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** Provider invoice/charge id; unique so webhook replays don't duplicate. */
+    externalId: text("external_id").notNull(),
+    description: text("description").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("usd"),
+    status: text("status").notNull().default("paid"),
+    creditsGranted: integer("credits_granted"),
+    hostedInvoiceUrl: text("hosted_invoice_url"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt()
+  },
+  (t) => [
+    uniqueIndex("invoices_external_idx").on(t.externalId),
+    index("invoices_org_idx").on(t.orgId, t.issuedAt)
+  ]
+);
+
 /** Processed external webhook events — the idempotency record (FAV-1202 AC). */
 export const webhookEvents = pgTable(
   "webhook_events",

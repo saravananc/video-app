@@ -1,5 +1,6 @@
 import { COST_TABLE } from "@fav/core";
 import type { TtsProvider, TtsResult } from "../types.js";
+import { chunkNarration, DEFAULT_CHUNK_CHARS } from "./chunking.js";
 
 const BASE = "https://api.elevenlabs.io/v1";
 const MODEL = process.env.FAV_ELEVENLABS_MODEL ?? "eleven_multilingual_v2";
@@ -32,18 +33,35 @@ export class ElevenLabsTtsProvider implements TtsProvider {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 
-  async synthesize(args: { text: string; voiceId: string; language: string }): Promise<TtsResult> {
-    const res = await this.request(`/text-to-speech/${encodeURIComponent(args.voiceId)}`, {
+  private async synthesizeChunk(text: string, voiceId: string, previous?: string, next?: string): Promise<Buffer> {
+    const res = await this.request(`/text-to-speech/${encodeURIComponent(voiceId)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        text: args.text,
+        text,
         model_id: MODEL,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        // Neighbouring text keeps prosody continuous across a chunk boundary,
+        // so a stitched long script doesn't sound like separate takes.
+        ...(previous ? { previous_text: previous.slice(-500) } : {}),
+        ...(next ? { next_text: next.slice(0, 500) } : {})
       })
     });
     if (!res.ok) throw new Error(`ElevenLabs TTS HTTP ${res.status}: ${await res.text()}`);
-    const audio = Buffer.from(await res.arrayBuffer());
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  /** Long scripts are chunked at sentence boundaries and stitched (FAV-604). */
+  async synthesize(args: { text: string; voiceId: string; language: string }): Promise<TtsResult> {
+    const chunks = chunkNarration(args.text, DEFAULT_CHUNK_CHARS);
+    const parts: Buffer[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      parts.push(await this.synthesizeChunk(chunks[i]!, args.voiceId, chunks[i - 1], chunks[i + 1]));
+    }
+    // MPEG frames are self-delimiting, so concatenating the payloads yields a
+    // playable stream; ffmpeg (in the renderer) decodes it as one track.
+    const audio = parts.length === 1 ? parts[0]! : Buffer.concat(parts);
+
     return {
       audio,
       contentType: "audio/mpeg",

@@ -24,6 +24,7 @@
     "@electric-sql/pglite": "^0.3.0",
     "@fav/core": "workspace:*",
     "@fav/providers": "workspace:*",
+    "@opentelemetry/api": "^1.9.1",
     "drizzle-orm": "^0.44.0",
     "pg": "^8.13.0",
     "zod": "^3.25.0"
