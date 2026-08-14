@@ -85,7 +85,7 @@ Fully implemented, tested, and verified working end to end.
 | Content moderation with a real classifier + production boot guard | FAV-405/1605 | `packages/providers/src/moderation/openai.ts`, `src/env.ts` | 12 tests incl. degrade-to-flagged on classifier outage |
 | Orgs, memberships, roles, org switcher | FAV-202/203 | `apps/web/src/lib/auth.ts`, `components/org-switcher.tsx` | Role tests; switcher re-checks membership |
 | Protected routes & middleware | FAV-204 | `apps/web/src/middleware.ts` | Live 401/redirect verified |
-| Teammate invites | FAV-205 | `apps/web/src/app/api/org/invites/` | Live accept flow verified |
+| Teammate invites — **accept only** | FAV-205 | `apps/web/src/app/api/org/invites/` | Accept flow verified. **Invite creation has no UI caller** — see §10 |
 | Feature flags with per-org overrides | FAV-1703 | `packages/db/src/flags.ts` | 6 tests + live gate verification |
 | Redis-backed rate limiting | FAV-1604 | `packages/providers/src/ratelimit.ts` | 9 tests against real Redis |
 | Token encryption at rest (AES-256-GCM) | FAV-1603 | `packages/providers/src/crypto.ts` | Roundtrip + tamper tests |
@@ -93,8 +93,8 @@ Fully implemented, tested, and verified working end to end.
 | Public REST API + scoped keys + metering | FAV-1501/1502/1503 | `apps/web/src/app/api/v1/`, `lib/api-key.ts` | Live verified incl. revocation |
 | MCP server | FAV-1505 | `apps/mcp/` | Drove a real generation via MCP client |
 | OpenAPI spec + developer docs page | FAV-1504 | `apps/web/src/app/docs/api/`, `api/v1/openapi.json` | Both served |
-| Admin: orgs, jobs, manual retry/refund, flags | FAV-1701/1702/1703 | `apps/web/src/app/(app)/admin/` | Live verified, staff-gated |
-| Audited support impersonation | FAV-1704 | `apps/web/src/app/api/admin/impersonate/` | Live verified |
+| Admin: orgs, jobs, manual retry/refund, flags | FAV-1701/1702/1703 | `apps/web/src/app/(app)/admin/` | Live verified, staff-gated. **`memberCount` always renders 0** and per-org flag overrides are API-only — see §10 |
+| Audited support impersonation — **API only** | FAV-1704 | `apps/web/src/app/api/admin/impersonate/` | Endpoint verified by request. **No UI**, and `audit_log` is never read back — see §10 |
 | Data retention + deletion with ledger integrity | FAV-1003/1606 | `packages/workflows/src/retention.ts` | 5 tests |
 | Structured logging with trace correlation | FAV-107/1601 | `packages/core/src/logger.ts` | Live: one traceId across pipeline |
 | CI: lint, typecheck, test, staging deploy | FAV-102 | `.github/workflows/ci.yml` | YAML validated |
@@ -456,3 +456,69 @@ Stages 1 and 2 run in parallel. Stage 3 cannot start before Stage 1 (needs a
 deployed staging environment). Items 16 and 17 have external dependencies —
 Instagram App Review and TikTok audit — that should be **started on day one**
 since approval, not engineering, is the long pole.
+
+---
+
+## 11. Runtime audit — 2026-08-14
+
+Everything below was established by running the application, not by reading it.
+A dev server was booted on a fresh database and each flow driven over HTTP.
+Where this section contradicts an earlier one, this section is correct.
+
+### Verified working end to end
+
+| Flow | Evidence |
+|---|---|
+| Local auth | Login, signup, verification email with single-use token (reuse → 400), per-account lockout, per-IP throttle (429 at 20/15 min) |
+| Generation pipeline | Topic → 4 scenes → images → TTS → captions → Remotion render in ~100 s; produced a 10.5 MB MP4, 1080×1920, h264 + aac, karaoke captions with the active word highlighted |
+| Credit ledger | Reserve on submit, refund on failure, 1-credit incremental charge on scene re-roll, arithmetic correct across 6 entries |
+| Moderation | A weapons topic was blocked mid-pipeline with a category-specific message and the full 13-credit reservation refunded |
+| Scene editor | `PATCH` narration invalidated the render (status → `draft`, `finalUrl` cleared); re-roll charged 1 credit |
+| Publishing | Mock OAuth → encrypted token stored → publish job → `published` with an external post id |
+| Billing | Checkout → webhook → plan upgraded to `pro`, 1000 credits granted, invoice row written |
+| Public API v1 | Flag-gated, bearer-key auth, scope enforcement (read-only key → 403 on write), revocation, 202 on generate |
+| Feature flags | Global default and per-org override both take effect; gate `public_api`, `autopilot`, `text_to_video` |
+| Video deletion | UI button → `DELETE` → soft delete → retention scrub |
+| MCP server | `initialize` + `tools/list` return the documented tool set |
+
+### Defects found
+
+| # | Defect | Location | Evidence |
+|---|---|---|---|
+| A1 | **`memberCount` is always 0** in the admin dashboard. The correlated subquery renders unqualified columns — `where "org_id" = "id"` — so the inner table shadows the outer and it compares `memberships.org_id` to `memberships.id`. | `api/admin/overview/route.ts:23` | Raw SQL returns 3 for `org_demo`; the subquery returns 0 for every org |
+| A2 | **Rate limiter is bypassable.** The bucket key is `x-forwarded-for` with no trusted-proxy configuration, so rotating the header resets the limit. The `"unknown"` fallback also collapses all traffic into one shared bucket when the header is absent. | `api/auth/login/route.ts:19` and peers | After reaching 429, six requests with rotating `x-forwarded-for` were all allowed |
+| A3 | **Intermittent fresh-boot crash (~1 in 5).** `next dev` evaluates `next.config.ts` in two processes; both start an embedded worker and both open PGlite on the same directory, aborting the WASM backend mid-migration. The comment claiming it "runs once per server process" is wrong. | `next.config.ts:33-57` | `embedded_worker_started` logs twice every boot; 1 of 5 fresh boots died in `runMigrations` |
+| A4 | **Email verification is not enforced.** Signup returns `verificationRequired: true`, but the unverified account immediately created a video and consumed credits. | `api/videos/route.ts` | HTTP 201 on generate with an unverified session |
+| A5 | **Duration is advisory.** 30 s requested produced 42.43 s of output (+41 %). Credits are estimated and charged against the *requested* duration, so real provider spend exceeds what is billed. Nothing measures the synthesized narration against the target. | `workflows/src/generation.ts` | `ffprobe` reports 42.496 s for a 30 s request |
+
+### Implemented but unreachable from the UI
+
+Each has a working endpoint and no caller, so the feature does not exist for users.
+
+| Capability | Endpoint | Missing |
+|---|---|---|
+| Send a teammate invite | `POST /api/org/invites` | No team/members page; only the accept page exists |
+| Cancel a subscription | `POST /api/billing/cancel` | No cancel control on the billing page |
+| Support impersonation | `POST /api/admin/impersonate` | No admin UI |
+| Per-org flag overrides | `PATCH /api/admin/flags` with `orgId` | Admin UI only toggles the global default |
+| AI-provenance watermark (FAV-1607) | `watermark` in the request schema | Not exposed in the wizard — cannot be switched on |
+| Non-English narration | `language` in the request schema | Not exposed in the wizard — always `en` |
+| Queue health | `GET /api/admin/health` | No admin UI |
+
+### Written but never read
+
+| Table / function | Consequence |
+|---|---|
+| `moderation_decisions` | Two write sites, zero reads. There is no review queue, so the degraded-classifier path that marks content `flagged` for review has no reviewer |
+| `audit_log` | Written only by impersonation. Admin refunds, job retries, and flag changes are unaudited, and nothing displays the log |
+| `pruneAuthTokens()` | Zero call sites — spent verification and reset tokens accumulate forever |
+
+### Test coverage
+
+| Package | Test files | Note |
+|---|---|---|
+| `packages/*` | 17 | Good coverage of ledger, queue, providers, workflows |
+| `apps/web` | 2 | Both Clerk. **No test touches any of the 48 API routes** — authorization, validation, and role enforcement in the HTTP layer are unverified by CI |
+| `apps/render`, `apps/worker`, `apps/mcp` | 0 | `--passWithNoTests` |
+
+No browser/E2E test exists; every UI claim in this document rests on manual verification.
